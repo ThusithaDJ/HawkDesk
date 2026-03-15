@@ -1,0 +1,30 @@
+<?xml version="1.0"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+"http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
+<!-- Generated Oct 23, 2014 10:01:41 PM by Hibernate Tools 3.6.0 -->
+<hibernate-mapping>
+    <class name="DB.Grninfo" table="grninfo" catalog="pharmacy">
+        <id name="grnNo" type="java.lang.Integer">
+            <column name="grnNo" />
+            <generator class="identity" />
+        </id>
+        <property name="date" type="date">
+            <column name="date" length="10" />
+        </property>
+        <property name="subTotal" type="java.lang.Double">
+            <column name="subTotal" precision="22" scale="0" />
+        </property>
+        <set name="stocks" table="stock" inverse="true" lazy="true" fetch="select">
+            <key>
+                <column name="grnNo" not-null="true" />
+            </key>
+            <one-to-many class="DB.Stock" />
+        </set>
+        <set name="grns" table="grn" inverse="true" lazy="true" fetch="select">
+            <key>
+                <column name="grnNo" not-null="true" />
+            </key>
+            <one-to-many class="DB.Grn" />
+        </set>
+    </class>
+</hibernate-mapping>

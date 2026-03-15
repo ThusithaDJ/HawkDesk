@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<!DOCTYPE hibernate-mapping PUBLIC "-//Hibernate/Hibernate Mapping DTD 3.0//EN"
+"http://www.hibernate.org/dtd/hibernate-mapping-3.0.dtd">
+<!-- Generated Oct 23, 2014 10:01:41 PM by Hibernate Tools 3.6.0 -->
+<hibernate-mapping>
+    <class name="DB.Invoiceinfo" table="invoiceinfo" catalog="pharmacy">
+        <id name="invoiceNo" type="java.lang.Integer">
+            <column name="invoiceNo" />
+            <generator class="identity" />
+        </id>
+        <property name="date" type="date">
+            <column name="date" length="10" />
+        </property>
+        <property name="total" type="java.lang.Double">
+            <column name="total" precision="22" scale="0" />
+        </property>
+        <property name="stat" type="string">
+            <column name="stat" length="45" />
+        </property>
+        <property name="paid" type="java.lang.Double">
+            <column name="paid" precision="22" scale="0" />
+        </property>
+        <property name="discount" type="java.lang.Double">
+            <column name="discount" precision="22" scale="0" />
+        </property>
+        <set name="invoices" table="invoice" inverse="true" lazy="true" fetch="select">
+            <key>
+                <column name="invoiceNo" not-null="true" />
+            </key>
+            <one-to-many class="DB.Invoice" />
+        </set>
+        <set name="returns" table="return" inverse="true" lazy="true" fetch="select">
+            <key>
+                <column name="invoiceNo" not-null="true" />
+            </key>
+            <one-to-many class="DB.Return" />
+        </set>
+    </class>
+</hibernate-mapping>
