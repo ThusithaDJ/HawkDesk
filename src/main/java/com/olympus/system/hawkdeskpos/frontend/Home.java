@@ -49,12 +49,12 @@ import net.sf.jasperreports.engine.JasperFillManager;
 import net.sf.jasperreports.engine.JasperPrint;
 import net.sf.jasperreports.engine.JasperReport;
 import net.sf.jasperreports.view.JasperViewer;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
+import jakarta.persistence.criteria.Root;
 
 /**
  *
@@ -62,11 +62,8 @@ import org.hibernate.criterion.Restrictions;
  */
 public class Home extends javax.swing.JFrame {
 
-    /**
-     * Creates new form Home
-     */
-    SessionFactory sf = null;
-    static Session session = null;
+    // Hibernate 6: hold only the SessionFactory; open short-lived sessions per operation
+    private static final SessionFactory sf = Controller.getSessionFactory();
 
     public Home() {
         initComponents();
@@ -75,8 +72,6 @@ public class Home extends javax.swing.JFrame {
         setDate();
         ImageIcon i = new ImageIcon(Toolkit.getDefaultToolkit().getImage(getClass().getResource("/images/icons/Pharmacy-icon 128x128.png")));
         setIconImage(i.getImage());
-        sf = Controller.getSessionFactory();
-        session = sf.openSession();
 //        jSCAnalogClock1.setUI(darkSteelAnalogClockUI1);
         readNotes();
         setNotifications();
@@ -782,17 +777,18 @@ public class Home extends javax.swing.JFrame {
     private void menuNewCategoryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuNewCategoryActionPerformed
 
         String name = JOptionPane.showInputDialog(this, "Please enter the category name");
-        try {
-            if (!name.equals(null) || !name.equals("")) {
-                Category cat = new Category();
+        if (name != null && !name.trim().isEmpty()) {
+            try (Session session = sf.openSession()) {
                 Transaction trans = session.beginTransaction();
+                Category cat = new Category();
                 cat.setCategoryName(name);
                 cat.setStat("active");
-                session.save(cat);
+                session.persist(cat);
                 trans.commit();
                 JOptionPane.showMessageDialog(this, "Category Saved");
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        } catch (Exception e) {
         }
         System.gc();
 
@@ -877,18 +873,17 @@ public class Home extends javax.swing.JFrame {
     private void menuAddBrandActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuAddBrandActionPerformed
 
         String name = JOptionPane.showInputDialog(this, "Please enter the brand name");
-        try {
-
-            if (!name.endsWith(null) || !name.equals("")) {
-                Brands brand = new Brands();
+        if (name != null && !name.trim().isEmpty()) {
+            try (Session session = sf.openSession()) {
                 Transaction trans = session.beginTransaction();
-
+                Brands brand = new Brands();
                 brand.setBrandName(name);
-                session.save(brand);
-                JOptionPane.showMessageDialog(this, "Brand name saved");
+                session.persist(brand);
                 trans.commit();
+                JOptionPane.showMessageDialog(this, "Brand name saved");
+            } catch (Exception e) {
+                e.printStackTrace();
             }
-        } catch (Exception e) {
         }
         System.gc();
     }//GEN-LAST:event_menuAddBrandActionPerformed
@@ -1000,24 +995,30 @@ public class Home extends javax.swing.JFrame {
     private void jMenuItem10ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem10ActionPerformed
 
         try {
-            int s = Integer.parseInt(JOptionPane.showInputDialog(this, "Please enter the GRN No"));
+            int grnNo = Integer.parseInt(JOptionPane.showInputDialog(this, "Please enter the GRN No"));
 
-            Criteria cr = session.createCriteria(Grninfo.class);
-            cr.add(Restrictions.eq("grnNo", s));
-            Grninfo info = (Grninfo) cr.uniqueResult();
-            System.out.println(info.toString());
+            try (Session session = sf.openSession()) {
+                CriteriaBuilder cb = session.getCriteriaBuilder();
+                CriteriaQuery<Grninfo> cq = cb.createQuery(Grninfo.class);
+                Root<Grninfo> root = cq.from(Grninfo.class);
+                cq.where(cb.equal(root.get("grnNo"), grnNo));
+                Grninfo info = session.createQuery(cq).uniqueResult();
 
-            GrnItems item = new GrnItems(info);
-            Home.HomeDeskpane.add(item);
-            item.setVisible(true);
-            item.setMaximum(true);
+                if (info == null) {
+                    JOptionPane.showMessageDialog(this, "Cannot find GRN no. Please check again");
+                    return;
+                }
 
-        } catch (NullPointerException N) {
-            JOptionPane.showMessageDialog(this, "Cannot find GRN no. Please check again");
+                GrnItems item = new GrnItems(info);
+                Home.HomeDeskpane.add(item);
+                item.setVisible(true);
+                item.setMaximum(true);
+            }
+
         } catch (NumberFormatException F) {
-            JOptionPane.showMessageDialog(this, "GRN number cannot empty");
+            JOptionPane.showMessageDialog(this, "GRN number cannot be empty");
         } catch (Exception e) {
-            System.out.println(e);
+            e.printStackTrace();
         }
 
     }//GEN-LAST:event_jMenuItem10ActionPerformed
@@ -1225,14 +1226,21 @@ public class Home extends javax.swing.JFrame {
     private void menusearchInvoiceActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menusearchInvoiceActionPerformed
 
         String s = JOptionPane.showInputDialog(this, "Please enter the invoice number");
-
         try {
-            Invoiceinfo invoice = (Invoiceinfo) session.load(Invoiceinfo.class, Integer.parseInt(s));
-            System.out.println(invoice.toString());
-            InvoiceDetails details = new InvoiceDetails(invoice);
-            Home.HomeDeskpane.add(details);
-            details.setVisible(true);
-
+            int invoiceNo = Integer.parseInt(s);
+            try (Session session = sf.openSession()) {
+                // session.get returns null if not found (safer than session.load)
+                Invoiceinfo invoice = session.get(Invoiceinfo.class, invoiceNo);
+                if (invoice == null) {
+                    JOptionPane.showMessageDialog(this, "Cannot find invoice");
+                    return;
+                }
+                InvoiceDetails details = new InvoiceDetails(invoice);
+                Home.HomeDeskpane.add(details);
+                details.setVisible(true);
+            }
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid invoice number");
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Cannot find invoice");
         }
@@ -1377,23 +1385,30 @@ public class Home extends javax.swing.JFrame {
     // End of variables declaration//GEN-END:variables
 
     public static void setNotifications() {
-        Criteria cr = session.createCriteria(Item.class);
-        cr.add(Restrictions.eq("stat", "active"));
-        Vector v = new Vector();
+        Vector<String> v = new Vector<>();
         v.add("-- Minimum stocks --");
-        List<Item> itm = cr.list();
-        try {
-            for (int i = 0; i < itm.size(); i++) {
-                Item item = itm.get(i);
-                Criteria cr2 = session.createCriteria(Stock.class);
-                cr2.add(Restrictions.eq("item", item));
-                cr2.setProjection(Projections.sum("qty"));
-                Long l = (Long) cr2.uniqueResult();
 
+        try (Session session = sf.openSession()) {
+            // Fetch all active items using CriteriaBuilder
+            CriteriaBuilder cb = session.getCriteriaBuilder();
+            CriteriaQuery<Item> cq = cb.createQuery(Item.class);
+            Root<Item> root = cq.from(Item.class);
+            cq.where(cb.equal(root.get("stat"), "active"));
+            List<Item> items = session.createQuery(cq).getResultList();
+
+            for (Item item : items) {
                 try {
-                    if (l <= item.getMinLevel()) {
-                        v.add(item.getItemName() + " (" + l + ")");
-                        System.out.println(item.getItemName());
+                    // Use HQL aggregate to sum qty for each item
+                    Long totalQty = session.createQuery(
+                            "SELECT COALESCE(SUM(s.qty), 0L) FROM Stock s WHERE s.item = :item",
+                            Long.class)
+                            .setParameter("item", item)
+                            .uniqueResult();
+
+                    if (totalQty == null || totalQty == 0) {
+                        v.add(item.getItemName() + " (Not in stock)");
+                    } else if (totalQty <= item.getMinLevel()) {
+                        v.add(item.getItemName() + " (" + totalQty + ")");
                     }
                 } catch (Exception e) {
                     v.add(item.getItemName() + " (Not in stock)");
@@ -1402,8 +1417,8 @@ public class Home extends javax.swing.JFrame {
         } catch (Exception e) {
             e.printStackTrace();
         }
-        lstNotifi.setListData(v);
 
+        lstNotifi.setListData(v);
         System.gc();
     }
 

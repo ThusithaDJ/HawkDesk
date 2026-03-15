@@ -11,16 +11,14 @@ import com.olympus.system.hawkdeskpos.frontend.Home;
 import java.awt.Graphics;
 import java.awt.Image;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Vector;
 import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
-import org.hibernate.criterion.MatchMode;
-import org.hibernate.criterion.Restrictions;
 
 /**
  *
@@ -31,16 +29,14 @@ public class ViewItems extends javax.swing.JInternalFrame {
     /**
      * Creates new form ViewItems
      */
-    static SessionFactory sf = null;
-    static Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
 
     public ViewItems() {
         super("View Items", true, true, true, false);
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         initComponents();
         setTableValue();
     }
+
     /**
      * This method is called from within the constructor to initialize the form.
      * WARNING: Do NOT modify this code. The content of this method is always
@@ -297,21 +293,24 @@ public class ViewItems extends javax.swing.JInternalFrame {
     private void txtSearchKeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_txtSearchKeyPressed
 
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        int r = jTable1.getRowCount();
-        if (r != 0) {
-            for (int i = 0; i < r; i++) {
-                dtm.removeRow(0);
-            }
-        }
-        Criteria c = ses.createCriteria(Item.class);
-        c.add(Restrictions.like("itemName", txtSearch.getText(), MatchMode.ANYWHERE));
-        
-        ArrayList<Item> itm = (ArrayList<Item>) c.list();
 
-        if (!itm.isEmpty()) {
-            for (int i = 0; i < itm.size(); i++) {
-                Vector v = new Vector();
-                Item item = itm.get(i);
+// Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
+            dtm.removeRow(0);
+        }
+
+        try (Session session = sf.openSession()) {
+
+            // Use HQL LIKE with wildcard for anywhere match
+            List<Item> items = session.createQuery(
+                    "FROM Item i WHERE i.itemName LIKE :search",
+                    Item.class)
+                    .setParameter("search", "%" + txtSearch.getText().trim() + "%")
+                    .getResultList();
+
+            for (Item item : items) {
+                Vector<Object> v = new Vector<>();
                 v.add(item.getItemId());
                 v.add(item.getCategory().getCategoryName());
                 v.add(item.getBrands().getBrandName());
@@ -320,6 +319,10 @@ public class ViewItems extends javax.swing.JInternalFrame {
                 v.add(item.getStat());
                 dtm.addRow(v);
             }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to search items");
+            e.printStackTrace();
         }
 
         jTable1.setModel(dtm);
@@ -340,42 +343,73 @@ public class ViewItems extends javax.swing.JInternalFrame {
 
     private void btnEditActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnEditActionPerformed
 
-        try {
-            int i = jTable1.getSelectedRow();
-            int imId = Integer.parseInt(jTable1.getValueAt(i, 0).toString());
-            Item item = (Item) ses.load(Item.class, imId);
+        int r = jTable1.getSelectedRow();
+        if (r == -1) {
+            JOptionPane.showMessageDialog(this, "Please select an item to edit");
+            return;
+        }
+
+        try (Session session = sf.openSession()) {
+
+            int itemId = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
+
+            Item item = session.get(Item.class, itemId);
+            if (item == null) {
+                JOptionPane.showMessageDialog(this, "Item not found");
+                return;
+            }
+
             AddNewItem it = new AddNewItem(item);
             Home.HomeDeskpane.add(it);
             it.setVisible(true);
             this.dispose();
 
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid item ID in selected row");
+            e.printStackTrace();
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Please select an item to edit");
+            JOptionPane.showMessageDialog(this, "Failed to load item for editing");
             e.printStackTrace();
         }
     }//GEN-LAST:event_btnEditActionPerformed
 
     private void btnRemoveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRemoveActionPerformed
 
-        try {
-            int r = jTable1.getSelectedRow();
-            if (r<0) {
-                throw new Exception();
+        int r = jTable1.getSelectedRow();
+        if (r == -1) {
+            JOptionPane.showMessageDialog(this, "Please select an item to delete");
+            return;
+        }
+
+        int choice = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete this item?");
+        if (choice != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        try (Session session = sf.openSession()) {
+
+            int itemId = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
+
+            Item item = session.get(Item.class, itemId);
+            if (item == null) {
+                JOptionPane.showMessageDialog(this, "Item not found");
+                return;
             }
-            System.out.println(r);
-            int i = JOptionPane.showConfirmDialog(this, "Are you sure to delete this item?");
-            if (i == 0) {
-                int itId = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
-                Transaction tr = ses.beginTransaction();
-                Item item = (Item) ses.load(Item.class, itId);
-                item.setStat("removed");
-                ses.saveOrUpdate(item);
-                tr.commit();
-                JOptionPane.showMessageDialog(this, item.getItemName() + " is deleted");
-                setTableValue();
-            }
+
+            Transaction tr = session.beginTransaction();
+            item.setStat("removed");
+            session.merge(item);
+            tr.commit();
+
+            JOptionPane.showMessageDialog(this, item.getItemName() + " has been deleted");
+            setTableValue();
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid item ID in selected row");
+            e.printStackTrace();
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Please select an item");
+            JOptionPane.showMessageDialog(this, "Failed to delete item");
+            e.printStackTrace();
         }
     }//GEN-LAST:event_btnRemoveActionPerformed
 
@@ -401,31 +435,42 @@ public class ViewItems extends javax.swing.JInternalFrame {
     // End of variables declaration//GEN-END:variables
 
     public static void setTableValue() {
-        System.out.println(" set table start");
-        jTable1.repaint();
+        System.out.println("setTableValue start");
+
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        int r = jTable1.getRowCount();
-        for (int i = 0; i < r; i++) {
+
+        // Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
             dtm.removeRow(0);
         }
-        Criteria cr = ses.createCriteria(Item.class);
-        cr.add(Restrictions.eq("stat", "active"));
-        ArrayList<Item> item = (ArrayList<Item>) cr.list();
-        Item itm = new Item();
 
-        for (int i = 0; i < item.size(); i++) {
-            Vector v = new Vector();
-            itm = item.get(i);
-            v.add(itm.getItemId());
-            v.add(itm.getCategory().getCategoryName());
-            v.add(itm.getBrands().getBrandName());
-            v.add(itm.getItemName());
-            v.add(itm.getMinLevel());
-            v.add(itm.getStat());
-            dtm.addRow(v);
+        try (Session session = sf.openSession()) {
+
+            List<Item> items = session.createQuery(
+                    "FROM Item i WHERE i.stat = :stat",
+                    Item.class)
+                    .setParameter("stat", "active")
+                    .getResultList();
+
+            for (Item item : items) {
+                Vector<Object> v = new Vector<>();
+                v.add(item.getItemId());
+                v.add(item.getCategory().getCategoryName());
+                v.add(item.getBrands().getBrandName());
+                v.add(item.getItemName());
+                v.add(item.getMinLevel());
+                v.add(item.getStat());
+                dtm.addRow(v);
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(null, "Failed to load items");
+            e.printStackTrace();
         }
-        jTable1.setModel(dtm);
 
-        System.out.println(" set table end");
+        jTable1.setModel(dtm);
+        jTable1.repaint();
+        System.out.println("setTableValue end");
     }
 }

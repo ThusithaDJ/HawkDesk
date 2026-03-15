@@ -8,10 +8,10 @@ package com.olympus.system.hawkdeskpos.frontend.model;
 import com.olympus.system.hawkdeskpos.db.dao.Brands;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Vector;
 import javax.swing.JComboBox;
 import javax.swing.JOptionPane;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
@@ -23,40 +23,47 @@ import static org.hibernate.annotations.SourceType.DB;
  */
 public class Brand {
 
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
 
     public Brand() {
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
     }
 
-    public Vector setBrand(JComboBox comboBox) {
-
-        Criteria c = ses.createCriteria(Brands.class);
-        ArrayList<Brands> arr = (ArrayList<Brands>) c.list();
-        Vector v = new Vector();
+    public Vector<String> setBrand(JComboBox comboBox) {
+        Vector<String> v = new Vector<>();
         v.add("-- Please select brand");
-        for (int i = 0; i < arr.size(); i++) {
-            Brands brands = arr.get(i);
-            v.add(brands.getBrandId() + " | " + brands.getBrandName());
+
+        try (Session session = sf.openSession()) {
+            List<Brands> brands = session.createQuery("FROM Brands", Brands.class)
+                    .getResultList();
+
+            for (Brands brand : brands) {
+                v.add(brand.getBrandId() + " | " + brand.getBrandName());
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
+
         return v;
     }
 
     public void addBrand() {
         String name = JOptionPane.showInputDialog("Please enter the brand name");
-        try {
-            if (!name.equals("")) {
-                Brands brand = new Brands();
-                Transaction trans = ses.beginTransaction();
+        if (name == null || name.trim().isEmpty()) {
+            return;
+        }
 
-                brand.setBrandName(name);
-                ses.save(brand);
-                trans.commit();
-                JOptionPane.showMessageDialog(null, "Brand name saved");
-            }
+        try (Session session = sf.openSession()) {
+            Transaction trans = session.beginTransaction();
+            Brands brand = new Brands();
+            brand.setBrandName(name.trim());
+            session.persist(brand);
+            trans.commit();
+            JOptionPane.showMessageDialog(null, "Brand name saved");
+
         } catch (Exception e) {
+            JOptionPane.showMessageDialog(null, "Failed to save brand: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 }

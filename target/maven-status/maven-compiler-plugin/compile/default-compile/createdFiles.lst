@@ -119,7 +119,6 @@ com\olympus\system\hawkdeskpos\frontend\stock\ViewCategory$5.class
 com\olympus\system\hawkdeskpos\frontend\sale\InvoiceDetails.class
 com\olympus\system\hawkdeskpos\frontend\Home$27.class
 com\olympus\system\hawkdeskpos\frontend\stock\ViewStock$6.class
-com\olympus\system\hawkdeskpos\frontend\sale\Invoice$22.class
 com\olympus\system\hawkdeskpos\frontend\sale\Invoice$14.class
 com\olympus\system\hawkdeskpos\frontend\finance\GrnInfo$4.class
 com\olympus\system\hawkdeskpos\frontend\sale\ViewSales$3.class

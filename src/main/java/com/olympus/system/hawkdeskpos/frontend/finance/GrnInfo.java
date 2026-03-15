@@ -5,23 +5,21 @@
  */
 package com.olympus.system.hawkdeskpos.frontend.finance;
 
-import com.olympus.system.hawkdeskpos.db.dao.Grn;
 import com.olympus.system.hawkdeskpos.db.dao.Grninfo;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.stock.AddStock;
+import jakarta.persistence.criteria.CriteriaBuilder;
+import jakarta.persistence.criteria.CriteriaQuery;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Vector;
 import javax.swing.ImageIcon;
+import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import static org.hibernate.annotations.SourceType.DB;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
 
 /**
  *
@@ -32,14 +30,11 @@ public class GrnInfo extends javax.swing.JInternalFrame {
     /**
      * Creates new form GrnInfo
      */
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
 
     public GrnInfo() {
         super("GRN Information", true, true, true, false);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         setTable();
     }
 
@@ -239,14 +234,29 @@ public class GrnInfo extends javax.swing.JInternalFrame {
 
         try {
             int r = jTable1.getSelectedRow();
-            int c = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
+            if (r == -1) {
+                JOptionPane.showMessageDialog(this, "Please select a GRN from the table");
+                return;
+            }
 
-            Grninfo info = (Grninfo) ses.load(Grninfo.class, c);
-            GrnItems items = new GrnItems(info);
-            Home.HomeDeskpane.add(items);
-            items.setVisible(true);
+            int grnNo = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
 
+            try (Session session = sf.openSession()) {
+                // session.get returns null if not found; session.load throws exception
+                Grninfo info = session.get(Grninfo.class, grnNo);
+                if (info == null) {
+                    JOptionPane.showMessageDialog(this, "GRN record not found");
+                    return;
+                }
+                GrnItems items = new GrnItems(info);
+                Home.HomeDeskpane.add(items);
+                items.setVisible(true);
+            }
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid GRN number in selected row");
         } catch (Exception e) {
+            e.printStackTrace();
         }
 
     }//GEN-LAST:event_jButton1ActionPerformed
@@ -265,33 +275,50 @@ public class GrnInfo extends javax.swing.JInternalFrame {
 
     private void setTable() {
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
+
+        // Clear existing rows
         int r = jTable1.getRowCount();
         for (int i = 0; i < r; i++) {
             dtm.removeRow(0);
         }
-        Criteria cr = ses.createCriteria(Grninfo.class);
-        ArrayList<Grninfo> gInfo = (ArrayList<Grninfo>) cr.list();
 
-        for (int i = 0; i < gInfo.size(); i++) {
-            Vector v = new Vector();
-            Grninfo info = gInfo.get(i);
-            Criteria cr2 = ses.createCriteria(Grn.class);
-            cr2.add(Restrictions.eq("grninfo", info));
+        try (Session session = sf.openSession()) {
 
-            cr2.setProjection(Projections.count("item"));
-            long l = (long) cr2.uniqueResult();
+            // Fetch all Grninfo records
+            CriteriaBuilder cb = session.getCriteriaBuilder();
+            CriteriaQuery<Grninfo> cq = cb.createQuery(Grninfo.class);
+            cq.from(Grninfo.class);
+            List<Grninfo> gInfoList = session.createQuery(cq).getResultList();
 
-            cr2.setProjection(Projections.sum("itemQty"));
-            long l2 = (long) cr2.uniqueResult();
+            for (Grninfo info : gInfoList) {
 
-            v.add(info.getGrnNo());
-            v.add(info.getDate());
-            v.add(l);
-            v.add(l2);
-            v.add(info.getSubTotal());
+                // Count of distinct items in this GRN
+                Long itemCount = session.createQuery(
+                        "SELECT COUNT(g.item) FROM Grn g WHERE g.grninfo = :info",
+                        Long.class)
+                        .setParameter("info", info)
+                        .uniqueResult();
 
-            dtm.addRow(v);
+                // Total quantity across all items in this GRN
+                Long totalQty = session.createQuery(
+                        "SELECT COALESCE(SUM(g.itemQty), 0L) FROM Grn g WHERE g.grninfo = :info",
+                        Long.class)
+                        .setParameter("info", info)
+                        .uniqueResult();
+
+                Vector<Object> v = new Vector<>();
+                v.add(info.getGrnNo());
+                v.add(info.getDate());
+                v.add(itemCount != null ? itemCount : 0L);
+                v.add(totalQty != null ? totalQty : 0L);
+                v.add(info.getSubTotal());
+                dtm.addRow(v);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
+
         jTable1.setModel(dtm);
     }
 }

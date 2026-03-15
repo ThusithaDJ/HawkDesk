@@ -3,35 +3,32 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-
 package com.olympus.system.hawkdeskpos.db.util;
 
-import org.hibernate.cfg.AnnotationConfiguration;
 import org.hibernate.SessionFactory;
+import org.hibernate.cfg.Configuration;
 
-/**
- * Hibernate Utility class with a convenient method to get Session Factory
- * object.
- *
- * @author Thusitha
- */
 public class Controller {
 
     private static final SessionFactory sessionFactory;
-    
+
     static {
         try {
-            // Create the SessionFactory from standard (hibernate.cfg.xml) 
-            // config file.
-            sessionFactory = new AnnotationConfiguration().configure().buildSessionFactory();
+            sessionFactory = new Configuration()
+                    .configure() // reads hibernate.cfg.xml from classpath
+                    .buildSessionFactory();
         } catch (Throwable ex) {
-            // Log the exception. 
-            System.err.println("Initial SessionFactory creation failed." + ex);
+            System.err.println("SessionFactory creation failed: " + ex);
             throw new ExceptionInInitializerError(ex);
         }
     }
-    
+
     public static SessionFactory getSessionFactory() {
         return sessionFactory;
+    }
+
+    // Always close the factory on app shutdown
+    public static void shutdown() {
+        getSessionFactory().close();
     }
 }

@@ -3,22 +3,19 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-
 package com.olympus.system.hawkdeskpos.frontend.sale;
 
 import com.olympus.system.hawkdeskpos.db.dao.Invoiceinfo;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Vector;
 import javax.swing.ImageIcon;
+import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import static org.hibernate.annotations.SourceType.DB;
-import org.hibernate.criterion.Restrictions;
 
 /**
  *
@@ -29,48 +26,67 @@ public class InvoiceDetails extends javax.swing.JInternalFrame {
     /**
      * Creates new form InvoiceDetails
      */
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
+
     public InvoiceDetails() {
-        super("Invoice Details",true,true,true,false);
+        super("Invoice Details", true, true, true, false);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
     }
-    public InvoiceDetails(Invoiceinfo invoiceId){
+
+    public InvoiceDetails(Invoiceinfo invoiceId) {
         this();
         setTableValues(invoiceId);
     }
-    public void setTableValues(Invoiceinfo info){
-        
+
+    public void setTableValues(Invoiceinfo info) {
+
         System.out.println("in the method");
-        DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
         System.out.println(info.getInvoiceNo());
-        
-        Criteria cr = ses.createCriteria(com.olympus.system.hawkdeskpos.db.dao.Invoice.class);
-        cr.add(Restrictions.eq("invoiceinfo", info));
-        ArrayList<com.olympus.system.hawkdeskpos.db.dao.Invoice> inv = (ArrayList<com.olympus.system.hawkdeskpos.db.dao.Invoice>) cr.list();
-        if (inv.isEmpty()) {
-            System.out.println("empty");
-        }else{
-            for (int i = 0; i < inv.size(); i++) {
-            com.olympus.system.hawkdeskpos.db.dao.Invoice invoice = inv.get(i);
-            
-            Vector v = new Vector();
-            v.add(invoice.getItem().getItemId());
-            v.add(invoice.getItem().getItemName());
-            v.add(invoice.getQty());
-            v.add(invoice.getStock().getPrice());
-            v.add(invoice.getSubTotal());            
-            dtm.addRow(v);
-            
-            lblDate.setText(invoice.getDateTime().toString());
-            lblDiscount.setText(invoice.getInvoiceinfo().getDiscount().toString());
-            lblInvoiceNo.setText(invoice.getInvoiceinfo().getInvoiceNo().toString());
-            lblPayment.setText(invoice.getInvoiceinfo().getPaid().toString());
-            lblTotal.setText(invoice.getSubTotal().toString());
+
+        DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
+
+        try (Session session = sf.openSession()) {
+
+            List<com.olympus.system.hawkdeskpos.db.dao.Invoice> invoices = session.createQuery(
+                    "FROM Invoice i WHERE i.invoiceinfo = :info",
+                    com.olympus.system.hawkdeskpos.db.dao.Invoice.class)
+                    .setParameter("info", info)
+                    .getResultList();
+
+            if (invoices.isEmpty()) {
+                System.out.println("No invoice lines found for invoice: " + info.getInvoiceNo());
+            } else {
+                double runningTotal = 0.0;
+
+                for (com.olympus.system.hawkdeskpos.db.dao.Invoice invoice : invoices) {
+                    Vector<Object> v = new Vector<>();
+                    v.add(invoice.getItem().getItemId());
+                    v.add(invoice.getItem().getItemName());
+                    v.add(invoice.getQty());
+                    v.add(invoice.getStock().getPrice());
+                    v.add(invoice.getSubTotal());
+                    dtm.addRow(v);
+
+                    runningTotal += invoice.getSubTotal();
+                }
+
+                // Header labels — set once from invoiceinfo, not on every row iteration
+                Invoiceinfo invoiceinfo = info;
+                lblDate.setText(invoiceinfo.getDate() != null
+                        ? invoiceinfo.getDate().toString() : "");
+                lblDiscount.setText(invoiceinfo.getDiscount() != null
+                        ? invoiceinfo.getDiscount().toString() : "0.0");
+                lblInvoiceNo.setText(invoiceinfo.getInvoiceNo().toString());
+                lblPayment.setText(invoiceinfo.getPaid() != null
+                        ? invoiceinfo.getPaid().toString() : "0.0");
+                lblTotal.setText(String.valueOf(runningTotal));
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load invoice details");
+            e.printStackTrace();
         }
-        }
+
         jTable1.setModel(dtm);
     }
 

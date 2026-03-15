@@ -12,14 +12,13 @@ import java.awt.Graphics;
 import java.awt.Image;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.List;
 import java.util.Vector;
 import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import org.hibernate.criterion.Restrictions;
 
 /**
  *
@@ -30,14 +29,11 @@ public class ViewSales extends javax.swing.JInternalFrame {
     /**
      * Creates new form ViewSales
      */
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
 
     public ViewSales() {
         super("Sales History", true, true, true, false);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         setTableValues();
 
     }
@@ -285,13 +281,30 @@ public class ViewSales extends javax.swing.JInternalFrame {
 
         try {
             int r = jTable1.getSelectedRow();
-            int invoice = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
-            Invoiceinfo info = (Invoiceinfo) ses.load(Invoiceinfo.class, invoice);
-            InvoiceDetails inde = new InvoiceDetails(info);
-            Home.HomeDeskpane.add(inde);
-            inde.setVisible(true);
+            if (r == -1) {
+                JOptionPane.showMessageDialog(this, "Please select an invoice from the table");
+                return;
+            }
+
+            int invoiceNo = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
+
+            try (Session session = sf.openSession()) {
+                Invoiceinfo info = session.get(Invoiceinfo.class, invoiceNo);
+                if (info == null) {
+                    JOptionPane.showMessageDialog(this, "Invoice not found");
+                    return;
+                }
+
+                InvoiceDetails inde = new InvoiceDetails(info);
+                Home.HomeDeskpane.add(inde);
+                inde.setVisible(true);
+            }
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid invoice number in selected row");
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Please select an valid invoice");
+            JOptionPane.showMessageDialog(this, "Please select a valid invoice");
+            e.printStackTrace();
         }
 
         System.gc();
@@ -300,29 +313,52 @@ public class ViewSales extends javax.swing.JInternalFrame {
     private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
 
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        int a = jTable1.getRowCount();
-        for (int i = 0; i < a; i++) {
+
+// Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
             dtm.removeRow(0);
         }
-        
-        Criteria cr = ses.createCriteria(Invoiceinfo.class);
-        cr.add(Restrictions.between("date", jDateChooser1.getDate(), jDateChooser2.getDate()));
-        ArrayList<Invoiceinfo> info = (ArrayList<Invoiceinfo>) cr.list();
-        for (int i = 0; i < info.size(); i++) {
-            Invoiceinfo invoiceinfo = info.get(i);
-            Vector v = new Vector();
-            v.add(invoiceinfo.getInvoiceNo());
-            v.add(invoiceinfo.getDate());
-            v.add(invoiceinfo.getStat());
-            v.add(invoiceinfo.getPaid());
-            v.add(invoiceinfo.getDiscount());
-            v.add(invoiceinfo.getTotal());
 
-            dtm.addRow(v);
+        Date from = jDateChooser1.getDate();
+        Date to = jDateChooser2.getDate();
 
+        if (from == null || to == null) {
+            JOptionPane.showMessageDialog(this, "Please select both start and end dates");
+            return;
         }
+
+        try (Session session = sf.openSession()) {
+
+            List<Invoiceinfo> invoices = session.createQuery(
+                    "FROM Invoiceinfo i WHERE i.date BETWEEN :from AND :to",
+                    Invoiceinfo.class)
+                    .setParameter("from", from)
+                    .setParameter("to", to)
+                    .getResultList();
+
+            if (invoices.isEmpty()) {
+                JOptionPane.showMessageDialog(this, "No invoices found for the selected date range");
+            } else {
+                for (Invoiceinfo invoiceinfo : invoices) {
+                    Vector<Object> v = new Vector<>();
+                    v.add(invoiceinfo.getInvoiceNo());
+                    v.add(invoiceinfo.getDate());
+                    v.add(invoiceinfo.getStat());
+                    v.add(invoiceinfo.getPaid());
+                    v.add(invoiceinfo.getDiscount());
+                    v.add(invoiceinfo.getTotal());
+                    dtm.addRow(v);
+                }
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load invoices");
+            e.printStackTrace();
+        }
+
         jTable1.setModel(dtm);
-        
+
     }//GEN-LAST:event_jButton1ActionPerformed
 
 
@@ -344,25 +380,36 @@ public class ViewSales extends javax.swing.JInternalFrame {
 
     private void setTableValues() {
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-//        int a = jTable1.getRowCount();
-//        for (int i = 0; i < a; i++) {
-//            dtm.removeRow(0);
-//        }
-        Criteria cr = ses.createCriteria(Invoiceinfo.class);
-        ArrayList<Invoiceinfo> info = (ArrayList<Invoiceinfo>) cr.list();
-        for (int i = 0; i < info.size(); i++) {
-            Invoiceinfo invoiceinfo = info.get(i);
-            Vector v = new Vector();
-            v.add(invoiceinfo.getInvoiceNo());
-            v.add(invoiceinfo.getDate());
-            v.add(invoiceinfo.getStat());
-            v.add(invoiceinfo.getPaid());
-            v.add(invoiceinfo.getDiscount());
-            v.add(invoiceinfo.getTotal());
 
-            dtm.addRow(v);
-
+        // Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
+            dtm.removeRow(0);
         }
+
+        try (Session session = sf.openSession()) {
+
+            List<Invoiceinfo> invoices = session.createQuery(
+                    "FROM Invoiceinfo",
+                    Invoiceinfo.class)
+                    .getResultList();
+
+            for (Invoiceinfo invoiceinfo : invoices) {
+                Vector<Object> v = new Vector<>();
+                v.add(invoiceinfo.getInvoiceNo());
+                v.add(invoiceinfo.getDate());
+                v.add(invoiceinfo.getStat());
+                v.add(invoiceinfo.getPaid());
+                v.add(invoiceinfo.getDiscount());
+                v.add(invoiceinfo.getTotal());
+                dtm.addRow(v);
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load invoices");
+            e.printStackTrace();
+        }
+
         jTable1.setModel(dtm);
     }
 }

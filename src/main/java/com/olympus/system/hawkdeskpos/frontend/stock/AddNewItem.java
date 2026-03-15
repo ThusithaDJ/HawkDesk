@@ -14,21 +14,17 @@ import com.olympus.system.hawkdeskpos.frontend.model.Brand;
 import java.awt.Color;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Vector;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.ImageIcon;
 import javax.swing.JOptionPane;
-import javax.swing.table.DefaultTableModel;
 import net.java.balloontip.BalloonTip;
 import net.java.balloontip.styles.RoundedBalloonStyle;
 import net.java.balloontip.utils.TimingUtils;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
-import org.hibernate.criterion.Restrictions;
 
 /**
  *
@@ -36,16 +32,13 @@ import org.hibernate.criterion.Restrictions;
  */
 public class AddNewItem extends javax.swing.JInternalFrame {
 
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
     String stat = " ";
 
     public AddNewItem() {
         super("Item Details", false, true, false);
         initComponents();
         btnUpdate.setVisible(false);
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         getCatList();
         getBrandList();
 
@@ -326,55 +319,88 @@ public class AddNewItem extends javax.swing.JInternalFrame {
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
 
-        if (txtItemName.getText().equals("")) {
+        if (txtItemName.getText().trim().isEmpty()) {
             txtItemName.grabFocus();
-            BalloonTip tip = new BalloonTip(txtItemName, "<html><font color='white'>Please fill this field</font></html>", style, false);
+            BalloonTip tip = new BalloonTip(txtItemName,
+                    "<html><font color='white'>Please fill this field</font></html>", style, false);
             tip.setVisible(true);
             TimingUtils.showTimedBalloon(tip, 2000);
 
         } else if (cmbBoxCat.getSelectedIndex() == 0) {
-            BalloonTip tip = new BalloonTip(cmbBoxCat, "<html><font color='white'>Please select a category</font></html>", style, false);
+            BalloonTip tip = new BalloonTip(cmbBoxCat,
+                    "<html><font color='white'>Please select a category</font></html>", style, false);
             tip.setVisible(true);
             TimingUtils.showTimedBalloon(tip, 2000);
 
         } else if (cmbBoxBrand.getSelectedIndex() == 0) {
-            BalloonTip tip = new BalloonTip(cmbBoxBrand, "<html><font color='white'>Please select a brand</font></html>", style, false);
+            BalloonTip tip = new BalloonTip(cmbBoxBrand,
+                    "<html><font color='white'>Please select a brand</font></html>", style, false);
             tip.setVisible(true);
             TimingUtils.showTimedBalloon(tip, 2000);
 
         } else {
-            Item item = new Item();
-            Criteria c = ses.createCriteria(Category.class);
-            c.add(Restrictions.eq("categoryName", cmbBoxCat.getSelectedItem().toString()));
+            try (Session session = sf.openSession()) {
 
-            Category cat = (Category) c.uniqueResult();
-            Criteria c2 = ses.createCriteria(Brands.class);
-            c2.add(Restrictions.eq("brandName", cmbBoxBrand.getSelectedItem().toString()));
+                // Look up selected Category
+                Category cat = session.createQuery(
+                        "FROM Category c WHERE c.categoryName = :name",
+                        Category.class)
+                        .setParameter("name", cmbBoxCat.getSelectedItem().toString())
+                        .uniqueResult();
 
-            Brands brand = (Brands) c2.uniqueResult();
-            Transaction trans = ses.beginTransaction();
+                if (cat == null) {
+                    JOptionPane.showMessageDialog(this, "Selected category not found");
+                    return;
+                }
 
-            item.setItemName(txtItemName.getText());
-            item.setBrands(brand);
-            item.setCategory(cat);
-            item.setMinLevel(Integer.parseInt(spinnerLevel.getValue().toString()));
-            item.setStat("active");
+                // Look up selected Brand
+                Brands brand = session.createQuery(
+                        "FROM Brands b WHERE b.brandName = :name",
+                        Brands.class)
+                        .setParameter("name", cmbBoxBrand.getSelectedItem().toString())
+                        .uniqueResult();
 
-            ses.save(item);
-            trans.commit();
+                if (brand == null) {
+                    JOptionPane.showMessageDialog(this, "Selected brand not found");
+                    return;
+                }
 
-            int i = JOptionPane.showConfirmDialog(this, "Item saved. \n Do you want to add another item?");
-            clear();
-            try {
-                AddStock.setItems();
-                AddStock.cmbBoxItmName.setSelectedIndex(AddStock.cmbBoxItmName.getItemCount());
+                // Save new Item
+                Transaction trans = session.beginTransaction();
+                Item item = new Item();
+                item.setItemName(txtItemName.getText().trim());
+                item.setCategory(cat);
+                item.setBrands(brand);
+                item.setMinLevel(Integer.parseInt(spinnerLevel.getValue().toString()));
+                item.setStat("active");
+                session.persist(item);
+                trans.commit();
+
+                int choice = JOptionPane.showConfirmDialog(this,
+                        "Item saved.\nDo you want to add another item?");
+                clear();
+
+                try {
+                    AddStock.setItems();
+                    AddStock.cmbBoxItmName.setSelectedIndex(
+                            AddStock.cmbBoxItmName.getItemCount() - 1);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+
+                if (choice == JOptionPane.NO_OPTION) {
+                    this.dispose();
+                }
+
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Invalid minimum level value");
+                e.printStackTrace();
             } catch (Exception e) {
-                System.out.println("error");
-            }
-            if (i == 1) {
-                this.dispose();
+                JOptionPane.showMessageDialog(this, "Failed to save item");
+                e.printStackTrace();
             }
         }
+
         Home.setNotifications();
         System.gc();
     }//GEN-LAST:event_btnSaveActionPerformed
@@ -410,23 +436,31 @@ public class AddNewItem extends javax.swing.JInternalFrame {
     private void txtItemNameFocusLost(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_txtItemNameFocusLost
 
         if (!stat.equals("update")) {
-            if (txtItemName.getText().equals("")) {
+            if (txtItemName.getText().trim().isEmpty()) {
                 txtItemName.grabFocus();
-                BalloonTip tip = new BalloonTip(txtItemName, "<html><font color='white'>Please fill this field</font></html>", style, false);
+                BalloonTip tip = new BalloonTip(txtItemName,
+                        "<html><font color='white'>Please fill this field</font></html>", style, false);
                 tip.setVisible(true);
                 TimingUtils.showTimedBalloon(tip, 2000);
 
             } else {
-                try {
-                    Criteria cr = ses.createCriteria(Item.class);
-                    cr.add(Restrictions.eq("itemName", txtItemName.getText()));
-                    cr.add(Restrictions.eq("stat", "active"));
-                    List lst = cr.list();
-                    if (!lst.isEmpty()) {
-                        JOptionPane.showMessageDialog(this, "Entered medecine already in the stock.\n Please enter another name");
-                    }
-                } catch (Exception e) {
+                try (Session session = sf.openSession()) {
 
+                    List<Item> lst = session.createQuery(
+                            "FROM Item i WHERE i.itemName = :name AND i.stat = :stat",
+                            Item.class)
+                            .setParameter("name", txtItemName.getText().trim())
+                            .setParameter("stat", "active")
+                            .getResultList();
+
+                    if (!lst.isEmpty()) {
+                        JOptionPane.showMessageDialog(this,
+                                "This medicine already exists in stock.\nPlease enter another name");
+                    }
+
+                } catch (Exception e) {
+                    JOptionPane.showMessageDialog(this, "Failed to check item name");
+                    e.printStackTrace();
                 }
             }
         }
@@ -436,31 +470,67 @@ public class AddNewItem extends javax.swing.JInternalFrame {
 
     private void btnUpdateActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnUpdateActionPerformed
 
-        Criteria cr = ses.createCriteria(Item.class);
-        cr.add(Restrictions.eq("itemName", txtItemName.getText()));
-        Item item = (Item) cr.uniqueResult();
+        try (Session session = sf.openSession()) {
 
-        Transaction tr = ses.beginTransaction();
+            // Look up item by name
+            Item item = session.createQuery(
+                    "FROM Item i WHERE i.itemName = :name",
+                    Item.class)
+                    .setParameter("name", txtItemName.getText().trim())
+                    .uniqueResult();
 
-        item.setBrands((Brands) ses.createCriteria(Brands.class).add(Restrictions.eq("brandName", cmbBoxBrand.getSelectedItem().toString())).uniqueResult());
-        item.setCategory((Category) ses.createCriteria(Category.class).add(Restrictions.eq("categoryName", cmbBoxCat.getSelectedItem().toString())).uniqueResult());
-        item.setMinLevel(Integer.parseInt(spinnerLevel.getValue().toString()));
-        item.setStat("active");
+            if (item == null) {
+                JOptionPane.showMessageDialog(this, "Item not found");
+                return;
+            }
 
-        ses.saveOrUpdate(item);
-        tr.commit();
+            // Look up selected Category
+            Category cat = session.createQuery(
+                    "FROM Category c WHERE c.categoryName = :name",
+                    Category.class)
+                    .setParameter("name", cmbBoxCat.getSelectedItem().toString())
+                    .uniqueResult();
 
-//        JOptionPane.showMessageDialog(this, "Item updated");
-        try {
+            if (cat == null) {
+                JOptionPane.showMessageDialog(this, "Selected category not found");
+                return;
+            }
+
+            // Look up selected Brand
+            Brands brand = session.createQuery(
+                    "FROM Brands b WHERE b.brandName = :name",
+                    Brands.class)
+                    .setParameter("name", cmbBoxBrand.getSelectedItem().toString())
+                    .uniqueResult();
+
+            if (brand == null) {
+                JOptionPane.showMessageDialog(this, "Selected brand not found");
+                return;
+            }
+
+            // Update and merge item
+            Transaction tr = session.beginTransaction();
+            item.setCategory(cat);
+            item.setBrands(brand);
+            item.setMinLevel(Integer.parseInt(spinnerLevel.getValue().toString()));
+            item.setStat("active");
+            session.merge(item);
+            tr.commit();
+
+            // Open ViewItems panel
             ViewItems items = new ViewItems();
             Home.HomeDeskpane.add(items);
             items.setVisible(true);
 
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid minimum level value");
+            e.printStackTrace();
         } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to update item");
             e.printStackTrace();
         }
-        this.dispose();
 
+        this.dispose();
         System.gc();
     }//GEN-LAST:event_btnUpdateActionPerformed
 
@@ -493,33 +563,50 @@ public class AddNewItem extends javax.swing.JInternalFrame {
     // End of variables declaration//GEN-END:variables
 
     private void getCatList() {
-        Vector v = new Vector();
+        Vector<String> v = new Vector<>();
         v.add("-- Select category --");
         v.add("Add new category");
-        Criteria cr = ses.createCriteria(Category.class);
-        ArrayList<Category> ls = (ArrayList<Category>) cr.list();
-        for (int i = 0; i < ls.size(); i++) {
-            Category category = ls.get(i);
-            v.add(category.getCategoryName());
 
+        try (Session session = sf.openSession()) {
+            List<Category> categories = session.createQuery(
+                    "FROM Category",
+                    Category.class)
+                    .getResultList();
+
+            for (Category category : categories) {
+                v.add(category.getCategoryName());
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load categories");
+            e.printStackTrace();
         }
-        cmbBoxCat.setModel(new DefaultComboBoxModel(v));
-        System.gc();
 
+        cmbBoxCat.setModel(new DefaultComboBoxModel<>(v));
+        System.gc();
     }
 
     private void getBrandList() {
-        Vector v = new Vector();
+        Vector<String> v = new Vector<>();
         v.add("-- Select Brand --");
         v.add("Add new brand");
-        Criteria cr = ses.createCriteria(Brands.class);
-        ArrayList<Brands> lst = (ArrayList<Brands>) cr.list();
-        for (int i = 0; i < lst.size(); i++) {
-            Brands brands = lst.get(i);
-            v.add(brands.getBrandName());
-        }
-        cmbBoxBrand.setModel(new DefaultComboBoxModel(v));
-        System.gc();
 
+        try (Session session = sf.openSession()) {
+            List<Brands> brands = session.createQuery(
+                    "FROM Brands",
+                    Brands.class)
+                    .getResultList();
+
+            for (Brands brand : brands) {
+                v.add(brand.getBrandName());
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load brands");
+            e.printStackTrace();
+        }
+
+        cmbBoxBrand.setModel(new DefaultComboBoxModel<>(v));
+        System.gc();
     }
 }

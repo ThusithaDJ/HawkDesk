@@ -20,7 +20,7 @@ import java.awt.event.KeyEvent;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.DefaultComboBoxModel;
@@ -30,11 +30,8 @@ import javax.swing.table.DefaultTableModel;
 import org.hibernate.SessionFactory;
 import net.java.balloontip.BalloonTip;
 import org.hibernate.Transaction;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.HibernateException;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
 import net.java.balloontip.utils.TimingUtils;
 import net.java.balloontip.styles.RoundedBalloonStyle;
 
@@ -47,8 +44,7 @@ public class AddStock extends javax.swing.JInternalFrame {
     /**
      * Creates new form AddStock
      */
-    SessionFactory sf = null;
-    static Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
     DefaultTableModel dtm = null;
     int products = 0;
     int qty = 0;
@@ -57,8 +53,6 @@ public class AddStock extends javax.swing.JInternalFrame {
     public AddStock() {
         super("Add new Stock", true, true, true, false);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         dtm = (DefaultTableModel) jTable1.getModel();
 //        jPanel1.setBackground(new Color(255, 255, 255, 0));
         setItems();
@@ -72,18 +66,27 @@ public class AddStock extends javax.swing.JInternalFrame {
     }
 
     public static void setItems() {
-        Criteria cr = ses.createCriteria(Item.class);
-        cr.add(Restrictions.eq("stat", "active"));
-        ArrayList<Item> lst = (ArrayList<Item>) cr.list();
-        Vector v = new Vector();
+        Vector<String> v = new Vector<>();
         v.add("-- Select item --");
         v.add("Add new item");
-        for (int i = 0; i < lst.size(); i++) {
-            Item item = lst.get(i);
-            v.add(item.getItemName());
 
+        try (Session session = sf.openSession()) {
+            List<Item> items = session.createQuery(
+                    "FROM Item i WHERE i.stat = :stat",
+                    Item.class)
+                    .setParameter("stat", "active")
+                    .getResultList();
+
+            for (Item item : items) {
+                v.add(item.getItemName());
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(null, "Failed to load items");
+            e.printStackTrace();
         }
-        cmbBoxItmName.setModel(new DefaultComboBoxModel(v));
+
+        cmbBoxItmName.setModel(new DefaultComboBoxModel<>(v));
     }
 
     /**
@@ -660,32 +663,48 @@ public class AddStock extends javax.swing.JInternalFrame {
     int itmId = 0;
     private void cmbBoxItmNameActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cmbBoxItmNameActionPerformed
 
-        if (cmbBoxItmName.getSelectedIndex() == 0) {
+        int selectedIndex = cmbBoxItmName.getSelectedIndex();
+
+        if (selectedIndex == 0) {
             clear();
-        }
-        if (cmbBoxItmName.getSelectedIndex() == 1) {
+
+        } else if (selectedIndex == 1) {
             AddNewItem item = new AddNewItem();
             Home.HomeDeskpane.add(item);
             item.setVisible(true);
 
         } else {
-            Criteria c = ses.createCriteria(Item.class);
-            c.add(Restrictions.eq("itemName", cmbBoxItmName.getSelectedItem().toString()));
-            Item itm = (Item) c.uniqueResult();
-            try {
+            try (Session session = sf.openSession()) {
+
+                // Look up selected item by name
+                Item itm = session.createQuery(
+                        "FROM Item i WHERE i.itemName = :name",
+                        Item.class)
+                        .setParameter("name", cmbBoxItmName.getSelectedItem().toString())
+                        .uniqueResult();
+
+                if (itm == null) {
+                    JOptionPane.showMessageDialog(this, "Selected item not found");
+                    return;
+                }
+
                 itmId = itm.getItemId();
                 txtCat.setText(itm.getCategory().getCategoryName());
                 txtBrand.setText(itm.getBrands().getBrandName());
-//            int i = itm.getItemId();
 
-                Criteria c2 = ses.createCriteria(Stock.class);
-                c2.add(Restrictions.eq("item", itm));
-                c2.setProjection(Projections.count("batch"));
-                long l = (long) c2.uniqueResult();
-                txtBatch.setText(String.valueOf(l + 1));
+                // Count existing batches for this item to suggest next batch number
+                Long batchCount = session.createQuery(
+                        "SELECT COUNT(s.batch) FROM Stock s WHERE s.item = :item",
+                        Long.class)
+                        .setParameter("item", itm)
+                        .uniqueResult();
+
+                long nextBatch = (batchCount != null ? batchCount : 0L) + 1;
+                txtBatch.setText(String.valueOf(nextBatch));
 
             } catch (Exception e) {
-                System.out.println("error");
+                JOptionPane.showMessageDialog(this, "Failed to load item details");
+                e.printStackTrace();
             }
         }
 
@@ -694,132 +713,152 @@ public class AddStock extends javax.swing.JInternalFrame {
     public void refreshItemList() {
         new Thread(
                 new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            setItems();
-                            Thread.sleep(5000);
-                            System.out.println("running");
-                        } catch (Exception e) {
-                        }
-                    }
+            @Override
+            public void run() {
+                try {
+                    setItems();
+                    Thread.sleep(5000);
+                    System.out.println("running");
+                } catch (Exception e) {
                 }
+            }
+        }
         ).start();
     }
 
     private void btnSaveActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveActionPerformed
 
         if (jTable1.getRowCount() != 0) {
-            Transaction tr = ses.beginTransaction();
-            Grninfo info = new Grninfo();
-            info.setDate(new Date(System.currentTimeMillis()));
-            info.setSubTotal(tot);
-            ses.save(info);
-            tr.commit();
+            try (Session session = sf.openSession()) {
 
-            saveGrn();
+                // Save GRN header
+                Transaction tr = session.beginTransaction();
+                Grninfo info = new Grninfo();
+                info.setDate(new Date(System.currentTimeMillis()));
+                info.setSubTotal(tot);
+                session.persist(info);
+                tr.commit();
+
+                saveGrn();
+                Home.setNotifications();
+
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, "Failed to save GRN");
+                e.printStackTrace();
+            }
+
             System.gc();
-            Home.setNotifications();
+
         } else {
-            JOptionPane.showMessageDialog(this, "Please add items for save to stock.");
+            JOptionPane.showMessageDialog(this, "Please add items before saving to stock");
         }
 
     }
 
     public void saveGrn() throws NumberFormatException, HibernateException {
-        int r = jTable1.getRowCount();
-        int c = jTable1.getColumnCount();
-        SessionFactory sf1 = Controller.getSessionFactory();
-        Session ses2 = sf1.openSession();
+        int rowCount = jTable1.getRowCount();
+        DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
 
-        DefaultTableModel dt = (DefaultTableModel) jTable1.getModel();
-        String a[] = new String[10];
-        for (int i = 0; i < r; i++) {
-            Criteria gi = ses.createCriteria(Grninfo.class);
-            gi.setProjection(Projections.max("grnNo"));
-            int id = (int) gi.uniqueResult();
+        try (Session session = sf.openSession()) {
 
-            Grn grn = new Grn();
-            Transaction trns = ses.beginTransaction();
-            grn.setGrninfo((Grninfo) ses.load(Grninfo.class, id));
+            // Get the latest GRN number once — outside the row loop
+            Integer latestGrnNo = session.createQuery(
+                    "SELECT MAX(g.grnNo) FROM Grninfo g",
+                    Integer.class)
+                    .uniqueResult();
 
-            Stock stock = new Stock();
-            Transaction stk = ses2.beginTransaction();
+            if (latestGrnNo == null) {
+                JOptionPane.showMessageDialog(this, "Failed to retrieve GRN info");
+                return;
+            }
 
-            for (int j = 0; j < c; j++) {
+            Grninfo grninfo = session.get(Grninfo.class, latestGrnNo);
+            if (grninfo == null) {
+                JOptionPane.showMessageDialog(this, "GRN header record not found");
+                return;
+            }
 
-                if (j == 0) {
-//                    setting up grn values
-                    a[i] = String.valueOf(dt.getValueAt(i, 0));
-                    Criteria cr = ses.createCriteria(Item.class);
-                    cr.add(Restrictions.eq("itemId", Integer.parseInt(a[i])));
-                    Item itm = (Item) cr.uniqueResult();
-                    grn.setItem(itm);
+            for (int i = 0; i < rowCount; i++) {
 
-//                    setting up stock values
-                    stock.setItem(itm);
-                    stock.setGrninfo((Grninfo) ses.load(Grninfo.class, id));
-                    Criteria bt = ses2.createCriteria(Stock.class);
-                    bt.add(Restrictions.eq("item", itm));
-                    bt.setProjection(Projections.count("batch"));
-                    long bno = (long) bt.uniqueResult();
-                    stock.setBatch(String.valueOf(bno + 1));
+                // Read all column values upfront for this row
+                int itemId = Integer.parseInt(dtm.getValueAt(i, 0).toString());
+                String expStr = dtm.getValueAt(i, 4).toString();
+                int qty = Integer.parseInt(dtm.getValueAt(i, 5).toString());
+                double cost = Double.parseDouble(dtm.getValueAt(i, 6).toString());
+                double price = Double.parseDouble(dtm.getValueAt(i, 7).toString());
 
-                } else if (j == 4) {
-                    try {
-                        a[i] = String.valueOf(dt.getValueAt(i, 4));
-                        System.out.println(a[i]);
-                        DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
-                        Date d = dateFormat.parse(a[i]);
-                        Long l = d.getTime();
-                        grn.setExpireDate(new Date(l));
-
-                        stock.setExpireDate(new Date(l));
-                    } catch (ParseException ex) {
-                        Logger.getLogger(AddStock.class.getName()).log(Level.SEVERE, null, ex);
-                    }
-
-                } else if (j == 5) {
-                    a[i] = String.valueOf(dt.getValueAt(i, 5));
-                    grn.setItemQty(Integer.parseInt(a[i]));
-
-                    stock.setQty(Integer.parseInt(a[i]));
-
-                } else if (j == 6) {
-                    a[i] = String.valueOf(dt.getValueAt(i, 6));
-                    grn.setItemCost(Double.parseDouble(a[i]));
-
-                    stock.setCost(Double.parseDouble(a[i]));
-
-                } else if (j == 7) {
-                    a[i] = String.valueOf(dt.getValueAt(i, 7));
-                    grn.setItemPrice(Double.parseDouble(a[i]));
-
-                    stock.setPrice(Double.parseDouble(a[i]));
-                    stock.setStat("available");
-
-                    System.out.println("Saving...");
-                    ses.save(grn);
-                    ses2.save(stock);
-
+                // Parse expiry date
+                Date expireDate;
+                try {
+                    DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd");
+                    expireDate = dateFormat.parse(expStr);
+                } catch (ParseException ex) {
+                    Logger.getLogger(AddStock.class.getName()).log(Level.SEVERE, null, ex);
+                    JOptionPane.showMessageDialog(this,
+                            "Invalid expiry date on row " + (i + 1) + ": " + expStr);
+                    return;
                 }
 
-            }
-            trns.commit();
-            stk.commit();
-            System.out.println("Saved..");
+                // Look up item by ID
+                Item itm = session.get(Item.class, itemId);
+                if (itm == null) {
+                    JOptionPane.showMessageDialog(this, "Item not found for row " + (i + 1));
+                    return;
+                }
 
+                // Get next batch number for this item
+                Long batchCount = session.createQuery(
+                        "SELECT COUNT(s.batch) FROM Stock s WHERE s.item = :item",
+                        Long.class)
+                        .setParameter("item", itm)
+                        .uniqueResult();
+                String batchNo = String.valueOf((batchCount != null ? batchCount : 0L) + 1);
+
+                // Save GRN line
+                Transaction grnTrans = session.beginTransaction();
+                Grn grn = new Grn();
+                grn.setGrninfo(grninfo);
+                grn.setItem(itm);
+                grn.setExpireDate(expireDate);
+                grn.setItemQty(qty);
+                grn.setItemCost(cost);
+                grn.setItemPrice(price);
+                session.persist(grn);
+                grnTrans.commit();
+
+                // Save Stock entry
+                Transaction stockTrans = session.beginTransaction();
+                Stock stock = new Stock();
+                stock.setGrninfo(grninfo);
+                stock.setItem(itm);
+                stock.setBatch(batchNo);
+                stock.setExpireDate(expireDate);
+                stock.setQty(qty);
+                stock.setCost(cost);
+                stock.setPrice(price);
+                stock.setStat("available");
+                session.persist(stock);
+                stockTrans.commit();
+
+                System.out.println("Saved row " + (i + 1));
+            }
+
+            // Clear table and reset labels after all rows saved
+            JOptionPane.showMessageDialog(this, "Record Saved Successfully");
+            for (int j = 0; j < rowCount; j++) {
+                dtm.removeRow(0);
+            }
             jTable1.setModel(dtm);
             lblProduct.setText("0");
             lblQty.setText("0");
             lblTot.setText("0.00");
-        }
-        JOptionPane.showMessageDialog(this, "Record Saved Successfully");
 
-        int rr = jTable1.getRowCount();
-        DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        for (int j = 0; j < rr; j++) {
-            dtm.removeRow(0);
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid number format in table data");
+            e.printStackTrace();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to save GRN items");
+            e.printStackTrace();
         }
 
         System.gc();
@@ -923,18 +962,38 @@ public class AddStock extends javax.swing.JInternalFrame {
     private void jFormattedTextField1KeyReleased(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_jFormattedTextField1KeyReleased
 
         if (evt.getKeyCode() == KeyEvent.VK_ENTER) {
-            try {
-                Item itm = (Item) ses.load(Item.class, Integer.parseInt(jFormattedTextField1.getValue().toString()));
+            String input = jFormattedTextField1.getValue().toString().trim();
+            if (input.isEmpty()) {
+                return;
+            }
+
+            try (Session session = sf.openSession()) {
+                int itemId = Integer.parseInt(input);
+
+                Item itm = session.get(Item.class, itemId);
+                if (itm == null) {
+                    JOptionPane.showMessageDialog(this, "Cannot find item");
+                    jFormattedTextField1.setText("");
+                    jFormattedTextField1.grabFocus();
+                    return;
+                }
+
                 if (!itm.getStat().equals("active")) {
-                    JOptionPane.showMessageDialog(this, "This item currently remove from stock");
+                    JOptionPane.showMessageDialog(this, "This item has been removed from stock");
                     jFormattedTextField1.setText("");
                     jFormattedTextField1.grabFocus();
                 } else {
                     cmbBoxItmName.setSelectedItem(itm.getItemName());
                     dateExpire.grabFocus();
                 }
+
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Please enter a valid item ID");
+                jFormattedTextField1.setText("");
+                jFormattedTextField1.grabFocus();
             } catch (Exception e) {
-                JOptionPane.showMessageDialog(this, "Cannot find item.");
+                JOptionPane.showMessageDialog(this, "Cannot find item");
+                e.printStackTrace();
             }
         }
     }//GEN-LAST:event_jFormattedTextField1KeyReleased

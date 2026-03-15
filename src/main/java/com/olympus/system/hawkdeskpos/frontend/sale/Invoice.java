@@ -23,6 +23,7 @@ import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Vector;
@@ -40,13 +41,10 @@ import net.sf.jasperreports.engine.JasperFillManager;
 import net.sf.jasperreports.engine.JasperPrint;
 import net.sf.jasperreports.engine.JasperReport;
 import net.sf.jasperreports.view.JasperViewer;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
-import static org.hibernate.annotations.SourceType.DB;
-import org.hibernate.criterion.Projections;
-import org.hibernate.criterion.Restrictions;
+import org.hibernate.persister.collection.mutation.RowMutationOperations.Restrictions;
 
 /**
  *
@@ -57,8 +55,7 @@ public class Invoice extends javax.swing.JInternalFrame {
     /**
      * Creates new form Invoice
      */
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
 
     double tot = 0;
     int qty = 0;
@@ -69,22 +66,29 @@ public class Invoice extends javax.swing.JInternalFrame {
     public Invoice() {
         super("Invoice", true, true, true);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         setTableValues();
     }
 
     public void setTableValues() {
-        Criteria cr = ses.createCriteria(Item.class);
-        cr.add(Restrictions.eq("stat", "active"));
-        ArrayList<Item> itm = (ArrayList<Item>) cr.list();
-        Vector v = new Vector();
-        v.add("-- Select Item --");
-        for (int i = 0; i < itm.size(); i++) {
-            Item item = itm.get(i);
-            v.add(item.getItemName());
+        try (Session session = sf.openSession()) {
+
+            List<Item> items = session.createQuery(
+                    "FROM Item i WHERE i.stat = :stat",
+                    Item.class)
+                    .setParameter("stat", "active")
+                    .getResultList();
+
+            Vector<String> v = new Vector<>();
+            v.add("-- Select Item --");
+            for (Item item : items) {
+                v.add(item.getItemName());
+            }
+            cmbBoxSearch.setModel(new DefaultComboBoxModel<>(v));
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load items");
+            e.printStackTrace();
         }
-        cmbBoxSearch.setModel(new DefaultComboBoxModel(v));
 
         System.gc();
     }
@@ -582,16 +586,45 @@ public class Invoice extends javax.swing.JInternalFrame {
     private void jSpinner1KeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_jSpinner1KeyPressed
 
         if (evt.getKeyCode() == KeyEvent.VK_ENTER) {
-            Criteria cr = ses.createCriteria(Item.class);
-            cr.add(Restrictions.eq("itemName", cmbBoxSearch.getSelectedItem().toString()));
-            Item itm = (Item) cr.uniqueResult();
+            try (Session session = sf.openSession()) {
 
-            Criteria cr2 = ses.createCriteria(Stock.class);
-            cr2.add(Restrictions.and(Restrictions.eq("item", itm), Restrictions.eq("batch", cmbBoxBatch.getSelectedItem().toString())));
-            Stock stk = (Stock) cr.uniqueResult();
+                // Find item by name
+                Item itm = session.createQuery(
+                        "FROM Item i WHERE i.itemName = :name",
+                        Item.class)
+                        .setParameter("name", cmbBoxSearch.getSelectedItem().toString())
+                        .uniqueResult();
 
-            if (stk.getQty() < Integer.parseInt(jSpinner1.getValue().toString())) {
-                JOptionPane.showMessageDialog(this, itm.getItemName() + " has not that much stock according to selected batch.\n Please select another batch\n Max:" + stk.getQty());
+                if (itm == null) {
+                    JOptionPane.showMessageDialog(this, "Item not found");
+                    return;
+                }
+
+                // Find stock by item + batch
+                Stock stk = session.createQuery(
+                        "FROM Stock s WHERE s.item = :item AND s.batch = :batch",
+                        Stock.class)
+                        .setParameter("item", itm)
+                        .setParameter("batch", cmbBoxBatch.getSelectedItem().toString())
+                        .uniqueResult();
+
+                if (stk == null) {
+                    JOptionPane.showMessageDialog(this, "No stock found for selected batch");
+                    return;
+                }
+
+                int requested = Integer.parseInt(jSpinner1.getValue().toString());
+                if (stk.getQty() < requested) {
+                    JOptionPane.showMessageDialog(this,
+                            itm.getItemName() + " does not have enough stock for the selected batch.\n"
+                            + "Please select another batch.\n"
+                            + "Max available: " + stk.getQty());
+                }
+
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Invalid quantity value");
+            } catch (Exception e) {
+                e.printStackTrace();
             }
         }
     }//GEN-LAST:event_jSpinner1KeyPressed
@@ -603,65 +636,99 @@ public class Invoice extends javax.swing.JInternalFrame {
 
     private void jButton4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton4ActionPerformed
 
-        try {
+        try (Session session = sf.openSession()) {
+
             DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-            Criteria cr = ses.createCriteria(Item.class);
-            cr.add(Restrictions.eq("itemName", cmbBoxSearch.getSelectedItem().toString()));
-            Item itm = (Item) cr.uniqueResult();
 
-            Criteria cr2 = ses.createCriteria(Stock.class);
-            cr2.add(Restrictions.and(Restrictions.eq("item", itm), Restrictions.eq("batch", cmbBoxBatch.getSelectedItem().toString())));
-            Stock st = (Stock) cr2.uniqueResult();
+            // Find item by name
+            Item itm = session.createQuery(
+                    "FROM Item i WHERE i.itemName = :name",
+                    Item.class)
+                    .setParameter("name", cmbBoxSearch.getSelectedItem().toString())
+                    .uniqueResult();
 
-            int r = jTable1.getRowCount();
-            int q = 0;
-            boolean item = false;
-            int ir = 0;
-            for (int i = 0; i < r; i++) {
-                if (jTable1.getValueAt(i, 1).equals(cmbBoxSearch.getSelectedItem()) && jTable1.getValueAt(i, 2).equals(cmbBoxBatch.getSelectedItem())) {
-                    q += Integer.parseInt(jTable1.getValueAt(i, 4).toString());
-                    item = true;
-                    ir = i;
+            if (itm == null) {
+                throw new NullPointerException("Item not found");
+            }
+
+            // Find stock by item + batch
+            Stock st = session.createQuery(
+                    "FROM Stock s WHERE s.item = :item AND s.batch = :batch",
+                    Stock.class)
+                    .setParameter("item", itm)
+                    .setParameter("batch", cmbBoxBatch.getSelectedItem().toString())
+                    .uniqueResult();
+
+            if (st == null) {
+                throw new NullPointerException("Stock not found");
+            }
+
+            int requestedQty = Integer.parseInt(jSpinner1.getValue().toString());
+            int rowCount = jTable1.getRowCount();
+            int existingQty = 0;
+            boolean itemAlreadyInTable = false;
+            int existingRow = -1;
+
+            // Check if the same item+batch combo already exists in the table
+            for (int i = 0; i < rowCount; i++) {
+                boolean sameItem = jTable1.getValueAt(i, 1).equals(cmbBoxSearch.getSelectedItem());
+                boolean sameBatch = jTable1.getValueAt(i, 2).equals(cmbBoxBatch.getSelectedItem());
+                if (sameItem && sameBatch) {
+                    existingQty += Integer.parseInt(jTable1.getValueAt(i, 4).toString());
+                    itemAlreadyInTable = true;
+                    existingRow = i;
                 }
             }
 
-            if (item == true) {
-                if (q + Integer.parseInt(jSpinner1.getValue().toString()) > st.getQty()) {
-                    JOptionPane.showMessageDialog(this, itm.getItemName() + " has not that much stock according to selected batch.\n Please select another batch\n Max:" + st.getQty());
+            NumberFormat f = NumberFormat.getInstance();
+            f.setMinimumFractionDigits(2);
 
+            if (itemAlreadyInTable) {
+                // Item is already in the table — update quantity in existing row
+                if (existingQty + requestedQty > st.getQty()) {
+                    JOptionPane.showMessageDialog(this,
+                            itm.getItemName() + " does not have enough stock for the selected batch.\n"
+                            + "Please select another batch.\n"
+                            + "Max available: " + st.getQty());
                 } else {
-                    jTable1.setValueAt(Integer.parseInt(jTable1.getValueAt(ir, 4).toString()) + Integer.parseInt(jSpinner1.getValue().toString()), ir, 4);
+                    int updatedQty = Integer.parseInt(jTable1.getValueAt(existingRow, 4).toString()) + requestedQty;
+                    jTable1.setValueAt(updatedQty, existingRow, 4);
+                    jTable1.setValueAt(f.format(st.getPrice() * updatedQty), existingRow, 5);
                 }
-            } else if (st.getQty() >= Integer.parseInt(jSpinner1.getValue().toString())) {
 
-                Vector v = new Vector();
-
-                NumberFormat f = NumberFormat.getInstance();
-                f.setMinimumFractionDigits(2);
-
+            } else if (st.getQty() >= requestedQty) {
+                // New row — item not yet in the table
+                Vector<Object> v = new Vector<>();
                 v.add(itm.getItemId());
                 v.add(itm.getItemName());
                 v.add(st.getBatch());
                 v.add(f.format(st.getPrice()));
-                v.add(jSpinner1.getValue());
-                v.add(f.format(st.getPrice() * Integer.parseInt(jSpinner1.getValue().toString())));
-
+                v.add(requestedQty);
+                v.add(f.format(st.getPrice() * requestedQty));
                 dtm.addRow(v);
-
                 jTable1.setModel(dtm);
-            } else {
-                JOptionPane.showMessageDialog(this, itm.getItemName() + " has not that much stock according to selected batch.\n Please select another batch\n Max:" + st.getQty());
-                jSpinner1.setValue(st.getQty());
 
+            } else {
+                // Requested qty exceeds available stock
+                JOptionPane.showMessageDialog(this,
+                        itm.getItemName() + " does not have enough stock for the selected batch.\n"
+                        + "Please select another batch.\n"
+                        + "Max available: " + st.getQty());
+                jSpinner1.setValue(st.getQty());
             }
 
             setFooter();
             System.gc();
+
         } catch (NullPointerException e) {
             RoundedBalloonStyle style = new RoundedBalloonStyle(10, 8, Color.BLACK, Color.BLACK);
-            BalloonTip tip = new BalloonTip(cmbBoxSearch, "<html><font color='white'>Please Select an item</font></html>", style, false);
+            BalloonTip tip = new BalloonTip(cmbBoxSearch,
+                    "<html><font color='white'>Please select an item</font></html>", style, false);
             tip.setVisible(true);
             TimingUtils.showTimedBalloon(tip, 2000);
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid quantity value");
+            e.printStackTrace();
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error");
             e.printStackTrace();
@@ -673,41 +740,63 @@ public class Invoice extends javax.swing.JInternalFrame {
     private void cmbBoxSearchActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_cmbBoxSearchActionPerformed
 
         if (cmbBoxSearch.getSelectedIndex() != 0) {
-            Criteria cr = ses.createCriteria(Item.class);
-            cr.add(Restrictions.eq("itemName", cmbBoxSearch.getSelectedItem().toString()));
-            Item itm = (Item) cr.uniqueResult();
+            try (Session session = sf.openSession()) {
 
-            Criteria cr2 = ses.createCriteria(Stock.class);
-            cr2.add(Restrictions.eq("item", itm));
-            cr2.add(Restrictions.eq("stat", "available"));
-            ArrayList<Stock> lst = (ArrayList<Stock>) cr2.list();
-            Vector v = new Vector();
+                // Find item by name
+                Item itm = session.createQuery(
+                        "FROM Item i WHERE i.itemName = :name",
+                        Item.class)
+                        .setParameter("name", cmbBoxSearch.getSelectedItem().toString())
+                        .uniqueResult();
 
-            if (lst.isEmpty()) {
-                int i = JOptionPane.showConfirmDialog(this, "Currently this item not in the stock. Do you want to add stock?", "Add new Stock", JOptionPane.YES_NO_OPTION);
-                if (i == 0) {
-                    Item item = (Item) ses.load(Item.class, Integer.parseInt(jTextField1.getText()));
-                    AddStock addStk = new AddStock(item);
-                    Home.HomeDeskpane.add(addStk);
-                    addStk.setVisible(true);
-                    try {
-                        addStk.setMaximum(true);
-                    } catch (PropertyVetoException ex) {
-                        Logger.getLogger(Invoice.class.getName()).log(Level.SEVERE, null, ex);
-                    }
+                if (itm == null) {
+                    JOptionPane.showMessageDialog(this, "Item not found");
+                    return;
                 }
-            } else {
-                for (int i = 0; i < lst.size(); i++) {
-                    Stock stock = lst.get(i);
 
-                    if (stock.getStat().equals("available")) {
+                // Find available stock for this item
+                List<Stock> lst = session.createQuery(
+                        "FROM Stock s WHERE s.item = :item AND s.stat = :stat",
+                        Stock.class)
+                        .setParameter("item", itm)
+                        .setParameter("stat", "available")
+                        .getResultList();
+
+                if (lst.isEmpty()) {
+                    int choice = JOptionPane.showConfirmDialog(this,
+                            "This item is not currently in stock. Do you want to add stock?",
+                            "Add New Stock",
+                            JOptionPane.YES_NO_OPTION);
+
+                    if (choice == JOptionPane.YES_OPTION) {
+                        // Use already-loaded itm instead of a redundant session.load()
+                        AddStock addStk = new AddStock(itm);
+                        Home.HomeDeskpane.add(addStk);
+                        addStk.setVisible(true);
+                        try {
+                            addStk.setMaximum(true);
+                        } catch (PropertyVetoException ex) {
+                            Logger.getLogger(Invoice.class.getName()).log(Level.SEVERE, null, ex);
+                        }
+                    }
+
+                } else {
+                    // Populate batch combo box with available batches
+                    Vector<String> v = new Vector<>();
+                    for (Stock stock : lst) {
                         v.add(stock.getBatch());
                     }
+
+                    if (v.isEmpty()) {
+                        JOptionPane.showMessageDialog(this, "This item is currently unavailable");
+                    } else {
+                        cmbBoxBatch.setModel(new DefaultComboBoxModel<>(v));
+                    }
                 }
-                if (v.isEmpty()) {
-                    JOptionPane.showMessageDialog(this, "This item currently un-available");
-                }
-                cmbBoxBatch.setModel(new DefaultComboBoxModel(v));
+
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, "Error loading item stock");
+                e.printStackTrace();
             }
         }
     }//GEN-LAST:event_cmbBoxSearchActionPerformed
@@ -753,61 +842,135 @@ public class Invoice extends javax.swing.JInternalFrame {
 
         try {
             int r = jTable1.getSelectedRow();
-
-            int i = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
-            String bt = jTable1.getValueAt(r, 2).toString();
-            Item item = (Item) ses.load(Item.class, i);
-            Criteria cr = ses.createCriteria(Stock.class);
-            cr.add(Restrictions.and(Restrictions.eq("item", item), Restrictions.eq("batch", bt)));
-            Stock st = (Stock) cr.uniqueResult();
-            int qt = Integer.parseInt(JOptionPane.showInputDialog(this, "Please enter the amount\n Max:" + st.getQty()));
-            int cQt = st.getQty();
-
-            if (qt > cQt) {
-                JOptionPane.showMessageDialog(this, "You cannot exceed current stock amount.\n Current stock:" + st.getQty());
-            } else {
-                jTable1.setValueAt(qt, r, 4);
-                jTable1.setValueAt(qt * Double.parseDouble(jTable1.getValueAt(r, 3).toString()), r, 5);
+            if (r == -1) {
+                if (jTable1.getRowCount() == 0) {
+                    JOptionPane.showMessageDialog(this, "There are no items in the table");
+                } else {
+                    JOptionPane.showMessageDialog(this, "Please select an item in the table");
+                }
+                return;
             }
-        } catch (ArrayIndexOutOfBoundsException e) {
-            int r = jTable1.getRowCount();
-            if (r == 0) {
-                JOptionPane.showMessageDialog(this, "There is no item in the table");
-            } else {
-                JOptionPane.showMessageDialog(this, "Please select a item in the table");
+
+            int itemId = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
+            String batch = jTable1.getValueAt(r, 2).toString();
+
+            try (Session session = sf.openSession()) {
+
+                // Use get() instead of load() — returns null safely if not found
+                Item item = session.get(Item.class, itemId);
+                if (item == null) {
+                    JOptionPane.showMessageDialog(this, "Item not found");
+                    return;
+                }
+
+                Stock st = session.createQuery(
+                        "FROM Stock s WHERE s.item = :item AND s.batch = :batch",
+                        Stock.class)
+                        .setParameter("item", item)
+                        .setParameter("batch", batch)
+                        .uniqueResult();
+
+                if (st == null) {
+                    JOptionPane.showMessageDialog(this, "Stock record not found for selected item and batch");
+                    return;
+                }
+
+                String input = JOptionPane.showInputDialog(this,
+                        "Please enter the amount\nMax: " + st.getQty());
+                if (input == null || input.trim().isEmpty()) {
+                    return;  // User cancelled the dialog
+                }
+
+                int qt = Integer.parseInt(input.trim());
+
+                if (qt > st.getQty()) {
+                    JOptionPane.showMessageDialog(this,
+                            "You cannot exceed the current stock amount.\n"
+                            + "Current stock: " + st.getQty());
+                } else {
+                    double price = Double.parseDouble(jTable1.getValueAt(r, 3).toString());
+                    jTable1.setValueAt(qt, r, 4);
+                    jTable1.setValueAt(qt * price, r, 5);
+                }
             }
-        } catch (NullPointerException n) {
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Please enter a valid number");
         } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "An unexpected error occurred");
+            e.printStackTrace();
         }
+
         setFooter();
         System.gc();
     }//GEN-LAST:event_btnUpdateQtyActionPerformed
 
     private void jTable1KeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_jTable1KeyPressed
 
+        int r = jTable1.getSelectedRow();
+        if (r == -1) {
+            return;
+        }
+
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
 
-        int r = jTable1.getSelectedRow();
-        Criteria cr = ses.createCriteria(Stock.class);
-        cr.add(Restrictions.and(Restrictions.eq("item", (Item) ses.load(Item.class, Integer.parseInt(jTable1.getValueAt(r, 0).toString()))), Restrictions.eq("batch", jTable1.getValueAt(r, 2))));
-        Stock s = (Stock) cr.uniqueResult();
-        if (evt.getKeyCode() == KeyEvent.VK_DELETE) {
-            removeItems(dtm);
-        } else if (evt.getKeyChar() == '+') {
-            if (s.getQty() <= Integer.parseInt(jTable1.getValueAt(r, 4).toString())) {
-                evt.consume();
-                JOptionPane.showMessageDialog(this, "Maximum stock qty reached");
-            } else {
-                jTable1.setValueAt(Integer.parseInt(jTable1.getValueAt(r, 4).toString()) + 1, r, 4);
-            }
-        } else if (evt.getKeyChar() == '-') {
-            if (Integer.parseInt(jTable1.getValueAt(r, 4).toString()) == 1) {
-                evt.consume();
-            } else {
-                jTable1.setValueAt(Integer.parseInt(jTable1.getValueAt(r, 4).toString()) - 1, r, 4);
+        try (Session session = sf.openSession()) {
 
+            int itemId = Integer.parseInt(jTable1.getValueAt(r, 0).toString());
+            String batch = jTable1.getValueAt(r, 2).toString();
+
+            Item item = session.get(Item.class, itemId);
+            if (item == null) {
+                JOptionPane.showMessageDialog(this, "Item not found");
+                return;
             }
+
+            Stock s = session.createQuery(
+                    "FROM Stock s WHERE s.item = :item AND s.batch = :batch",
+                    Stock.class)
+                    .setParameter("item", item)
+                    .setParameter("batch", batch)
+                    .uniqueResult();
+
+            if (s == null) {
+                JOptionPane.showMessageDialog(this, "Stock record not found");
+                return;
+            }
+
+            int currentQty = Integer.parseInt(jTable1.getValueAt(r, 4).toString());
+            double price = Double.parseDouble(jTable1.getValueAt(r, 3).toString());
+
+            if (evt.getKeyCode() == KeyEvent.VK_DELETE) {
+                removeItems(dtm);
+
+            } else if (evt.getKeyChar() == '+') {
+                if (currentQty >= s.getQty()) {
+                    evt.consume();
+                    JOptionPane.showMessageDialog(this, "Maximum stock quantity reached.\nMax: " + s.getQty());
+                } else {
+                    int newQty = currentQty + 1;
+                    jTable1.setValueAt(newQty, r, 4);
+                    jTable1.setValueAt(newQty * price, r, 5);
+                }
+
+            } else if (evt.getKeyChar() == '-') {
+                if (currentQty <= 1) {
+                    evt.consume();
+                } else {
+                    int newQty = currentQty - 1;
+                    jTable1.setValueAt(newQty, r, 4);
+                    jTable1.setValueAt(newQty * price, r, 5);
+                }
+            }
+
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid value in table");
+            e.printStackTrace();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "An unexpected error occurred");
+            e.printStackTrace();
         }
+
         setFooter();
     }//GEN-LAST:event_jTable1KeyPressed
 
@@ -846,43 +1009,47 @@ public class Invoice extends javax.swing.JInternalFrame {
     }
 
     private void printInvoice() {
-        new Thread(
-                new Runnable() {
+        new Thread(() -> {
+            try (Session session = sf.openSession()) {
 
-                    @Override
-                    public void run() {
+                // Get the latest invoice number using HQL aggregate
+                Integer latestInvoiceNo = session.createQuery(
+                        "SELECT MAX(i.invoiceinfo.invoiceNo) FROM Invoice i",
+                        Integer.class)
+                        .uniqueResult();
 
-                        try {
-                            Criteria cr = ses.createCriteria(com.olympus.system.hawkdeskpos.db.dao.Invoice.class);
-                            cr.setProjection(Projections.max("invoiceinfo"));
-                            Invoiceinfo in = (Invoiceinfo) cr.uniqueResult();
-                            int i = in.getInvoiceNo();
-
-                            Connection cn = new Conn().con();
-//                            JRProperties.setProperty("net.sf.jasperreports.xpath.executer.factory", "net.sf.jasperreports.engine.util.xml.JaxenXPathExecuterFactory");
-//                            JRProperties.setProperty("net.sf.jasperreports.xpath.executer.factory", "net.sf.jasperreports.engine.util.xml.JaxenXPathExecuterFactory");
-                            Class.forName("net.sf.jasperreports.extensions.ExtensionsEnvironment");
-                            Map<String, Object> map = new HashMap<String, Object>();
-                            map.put("invoiceId", i);
-                            map.put("BusinessName", "Upul Hardware");
-                            map.put("BusinessAddress", "Nikaweratia");
-                            map.put("IS_IGNORE_PAGINATION", true);
-//                            JasperReport report = JasperCompileManager.compileReport("D:\\Dev\\Workspaces\\NetBeans\\Products\\Pharmacy\\src\\reports\\Invoice.jrxml");
-                            JasperReport report = JasperCompileManager.compileReport("D:\\Dev\\Workspaces\\NetBeans\\Products\\Pharmacy\\src\\reports\\invoice703.jrxml");
-                            JasperPrint print = JasperFillManager.fillReport(report, map, cn);
-                            JasperViewer.viewReport(print, true);
-//                            JasperPrintManager.printReport(print, false);
-
-                        }catch (ExceptionInInitializerError e) {
-                            System.out.println("=== REAL CAUSE ===");
-                            e.getCause().printStackTrace();  // This prints the actual crash
-                        } catch (Exception ex) {
-                            JOptionPane.showMessageDialog(null, "Note: You did't print the reciept");
-                            ex.printStackTrace();
-                        }
-                    }
+                if (latestInvoiceNo == null) {
+                    JOptionPane.showMessageDialog(null, "No invoices found");
+                    return;
                 }
-        ).start();
+
+                // Build report parameters
+                Map<String, Object> map = new HashMap<>();
+                map.put("invoiceId", latestInvoiceNo);
+                map.put("BusinessName", "Upul Hardware");
+                map.put("BusinessAddress", "Nikaweratia");
+                map.put("IS_IGNORE_PAGINATION", true);
+
+                // Load report from classpath resources instead of hardcoded absolute path
+                String reportPath = getClass()
+                        .getResource("/reports/invoice703.jrxml")
+                        .getPath();
+
+                JasperReport report = JasperCompileManager.compileReport(reportPath);
+
+                try (Connection cn = new Conn().con()) {
+                    JasperPrint print = JasperFillManager.fillReport(report, map, cn);
+                    JasperViewer.viewReport(print, true);
+                }
+
+            } catch (ExceptionInInitializerError e) {
+                System.err.println("=== JasperReports init failure ===");
+                e.getCause().printStackTrace();
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(null, "Could not print the receipt");
+                ex.printStackTrace();
+            }
+        }).start();
     }//GEN-LAST:event_btnSavePrintActionPerformed
 
     private void txtDiscountKeyReleased(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_txtDiscountKeyReleased
@@ -920,16 +1087,31 @@ public class Invoice extends javax.swing.JInternalFrame {
     private void jTextField1KeyPressed(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_jTextField1KeyPressed
 
         if (evt.getKeyCode() == KeyEvent.VK_ENTER) {
-            try {
-                Item itm = (Item) ses.load(Item.class, Integer.parseInt(jTextField1.getText()));
+            String input = jTextField1.getText().trim();
+            if (input.isEmpty()) {
+                return;
+            }
+
+            try (Session session = sf.openSession()) {
+                int itemId = Integer.parseInt(input);
+
+                Item itm = session.get(Item.class, itemId);
+                if (itm == null) {
+                    JOptionPane.showMessageDialog(this, "Cannot find item");
+                    return;
+                }
+
                 if (!itm.getStat().equals("active")) {
-                    JOptionPane.showMessageDialog(this, "Entered item delete from the stock");
+                    JOptionPane.showMessageDialog(this, "This item has been removed from stock");
                 } else {
                     cmbBoxSearch.setSelectedItem(itm.getItemName());
                 }
 
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Please enter a valid item ID");
             } catch (Exception e) {
                 JOptionPane.showMessageDialog(this, "Cannot find item");
+                e.printStackTrace();
             }
         }
     }//GEN-LAST:event_jTextField1KeyPressed
@@ -953,7 +1135,7 @@ public class Invoice extends javax.swing.JInternalFrame {
         tot = 0;
         for (int i = 0; i < r; i++) {
             int qt = Integer.parseInt(jTable1.getValueAt(i, 4).toString());
-            double total = Double.parseDouble(jTable1.getValueAt(i, 3).toString().replace(",","")) * qt;
+            double total = Double.parseDouble(jTable1.getValueAt(i, 3).toString().replace(",", "")) * qt;
 
             tot += total;
         }
@@ -972,82 +1154,110 @@ public class Invoice extends javax.swing.JInternalFrame {
     }
 
     public void saveData() {
-        Invoiceinfo info = new Invoiceinfo();
-        Transaction trans = ses.beginTransaction();
-        info.setDate(new Date(System.currentTimeMillis()));
-        info.setTotal(tot);
-        info.setStat("delievered");
-        info.setPaid(Double.parseDouble(txtPayment.getValue().toString()));
-        if (dis == 0.0) {
-            info.setDiscount(0.0);
-        } else {
-            info.setDiscount(Double.parseDouble(txtDiscount.getValue().toString()));
-        }
-        ses.save(info);
-        trans.commit();
+        try (Session session = sf.openSession()) {
 
-        Criteria cr = ses.createCriteria(Invoiceinfo.class);
-        cr.setProjection(Projections.count("invoiceNo"));
-        long l = (long) cr.uniqueResult();
-        System.out.println(l);
+            // ── 1. Save the invoice header (Invoiceinfo) ────────────────────────
+            Transaction trans = session.beginTransaction();
+            Invoiceinfo info = new Invoiceinfo();
+            info.setDate(new Date(System.currentTimeMillis()));
+            info.setTotal(tot);
+            info.setStat("delivered");
+            info.setPaid(Double.parseDouble(txtPayment.getValue().toString()));
+            info.setDiscount(dis == 0.0 ? 0.0
+                    : Double.parseDouble(txtDiscount.getValue().toString()));
+            session.persist(info);
+            trans.commit();
 
-        int r = jTable1.getRowCount();
-        int c = jTable1.getColumnCount();
+            // ── 2. Reload the saved Invoiceinfo using its generated ID ──────────
+            // info.getInvoiceNo() is now populated after persist + commit
+            Integer newInvoiceNo = session.createQuery(
+                    "SELECT MAX(i.invoiceNo) FROM Invoiceinfo i",
+                    Integer.class)
+                    .uniqueResult();
 
-        System.out.println("before loops");
-
-        for (int i = 0; i < r; i++) {
-            Criteria cIn = ses.createCriteria(Invoiceinfo.class);
-            cIn.setProjection(Projections.max("invoiceNo"));
-            Invoiceinfo inv = (Invoiceinfo) ses.load(Invoiceinfo.class, (int) cIn.uniqueResult());
-
-            Transaction tran = ses.beginTransaction();
-            com.olympus.system.hawkdeskpos.db.dao.Invoice invo = new com.olympus.system.hawkdeskpos.db.dao.Invoice();
-            for (int j = 0; j < c; j++) {
-                if (j == 0) {
-                    System.out.println("in 0");
-                    Item it = (Item) ses.load(Item.class, Integer.parseInt(jTable1.getValueAt(i, j).toString()));
-                    invo.setInvoiceinfo(inv);
-                    invo.setItem(it);
-                    System.out.println(it.getItemName());
-                } else if (j == 2) {
-                    System.out.println("in 2");
-                    invo.setBatch(jTable1.getValueAt(i, j).toString());
-                } else if (j == 3) {
-                    System.out.println("in 3");
-                    invo.setDateTime(new Date(System.currentTimeMillis()));
-                } else if (j == 4) {
-                    invo.setQty(Integer.parseInt(jTable1.getValueAt(i, j).toString().replace(",", "")));
-                } else if (j == 5) {
-
-                    Item it = (Item) ses.load(Item.class, Integer.parseInt(jTable1.getValueAt(i, 0).toString().replace(",", "")));
-                    Criteria stock = ses.createCriteria(Stock.class);
-                    stock.add(Restrictions.and(Restrictions.eq("item", it), Restrictions.eq("batch", jTable1.getValueAt(i, 2).toString())));
-                    Stock s = (Stock) stock.uniqueResult();
-                    System.out.println(s.getStockId());
-                    invo.setStock(s);
-                    invo.setSubTotal(Double.parseDouble(jTable1.getValueAt(i, j).toString().replace(",", "")));
-                    ses.save(invo);
-                    tran.commit();
-
-                    Transaction stTr = ses.beginTransaction();
-                    s.setQty(s.getQty() - (Integer.parseInt(jTable1.getValueAt(i, 4).toString().replace(",", ""))));
-                    int x = s.getQty();
-                    if (x == 0) {
-                        s.setStat("un-available");
-                    }
-                    ses.saveOrUpdate(s);
-                    stTr.commit();
-
-                }
+            if (newInvoiceNo == null) {
+                JOptionPane.showMessageDialog(this, "Failed to retrieve saved invoice");
+                return;
             }
 
-            JOptionPane.showMessageDialog(this, "Record Saved. \n Please give change:" + lblBalance.getText());
+            Invoiceinfo savedInfo = session.get(Invoiceinfo.class, newInvoiceNo);
+            if (savedInfo == null) {
+                JOptionPane.showMessageDialog(this, "Failed to load saved invoice");
+                return;
+            }
+
+            // ── 3. Save each invoice line from the table ─────────────────────────
+            int rowCount = jTable1.getRowCount();
+            for (int i = 0; i < rowCount; i++) {
+
+                int itemId = Integer.parseInt(
+                        jTable1.getValueAt(i, 0).toString().replace(",", ""));
+                String batch = jTable1.getValueAt(i, 2).toString();
+                int qty = Integer.parseInt(
+                        jTable1.getValueAt(i, 4).toString().replace(",", ""));
+                double subTotal = Double.parseDouble(
+                        jTable1.getValueAt(i, 5).toString().replace(",", ""));
+
+                // Load item
+                Item item = session.get(Item.class, itemId);
+                if (item == null) {
+                    JOptionPane.showMessageDialog(this, "Item not found for row " + (i + 1));
+                    continue;
+                }
+
+                // Load matching stock record
+                Stock stock = session.createQuery(
+                        "FROM Stock s WHERE s.item = :item AND s.batch = :batch",
+                        Stock.class)
+                        .setParameter("item", item)
+                        .setParameter("batch", batch)
+                        .uniqueResult();
+
+                if (stock == null) {
+                    JOptionPane.showMessageDialog(this, "Stock not found for: "
+                            + item.getItemName() + " / batch: " + batch);
+                    continue;
+                }
+
+                // Save invoice line
+                Transaction invoiceTrans = session.beginTransaction();
+                com.olympus.system.hawkdeskpos.db.dao.Invoice invo
+                        = new com.olympus.system.hawkdeskpos.db.dao.Invoice();
+                invo.setInvoiceinfo(savedInfo);
+                invo.setItem(item);
+                invo.setStock(stock);
+                invo.setBatch(batch);
+                invo.setDateTime(new Date(System.currentTimeMillis()));
+                invo.setQty(qty);
+                invo.setSubTotal(subTotal);
+                session.persist(invo);
+                invoiceTrans.commit();
+
+                // Update stock quantity
+                Transaction stockTrans = session.beginTransaction();
+                stock.setQty(stock.getQty() - qty);
+                if (stock.getQty() <= 0) {
+                    stock.setQty(0);
+                    stock.setStat("un-available");
+                }
+                session.merge(stock);
+                stockTrans.commit();
+            }
+
+            // ── 4. Post-save UI updates ──────────────────────────────────────────
+            JOptionPane.showMessageDialog(this,
+                    "Record saved.\nPlease give change: " + lblBalance.getText());
             jTextField1.setText("");
             jTextField1.grabFocus();
             Home.setNotifications();
-        }
 
+        } catch (NumberFormatException e) {
+            JOptionPane.showMessageDialog(this, "Invalid number format in table data");
+            e.printStackTrace();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to save invoice");
+            e.printStackTrace();
+        }
     }
 
     public void clear() {

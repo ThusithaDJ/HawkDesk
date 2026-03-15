@@ -9,11 +9,11 @@ import com.olympus.system.hawkdeskpos.db.dao.Category;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.util.ArrayList;
+import java.util.List;
 import java.util.Vector;
 import javax.swing.ImageIcon;
+import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 
@@ -26,14 +26,11 @@ public class ViewCategory extends javax.swing.JInternalFrame {
     /**
      * Creates new form ViewCategory
      */
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
 
     public ViewCategory() {
-        super("View category",true,true,true,false);
+        super("View category", true, true, true, false);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         setCatTable();
     }
 
@@ -265,7 +262,6 @@ public class ViewCategory extends javax.swing.JInternalFrame {
 
     private void jTextField1KeyTyped(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_jTextField1KeyTyped
 
-        Criteria cr = ses.createCriteria(Category.class);
     }//GEN-LAST:event_jTextField1KeyTyped
 
     private void jTextField1FocusGained(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_jTextField1FocusGained
@@ -291,18 +287,33 @@ public class ViewCategory extends javax.swing.JInternalFrame {
 
     private void setCatTable() {
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        Criteria c = ses.createCriteria(Category.class);
-        ArrayList<Category> catArray = (ArrayList<Category>) c.list();
-        Category category = new Category();
 
-        for (int i = 0; i < catArray.size(); i++) {
-            Vector v = new Vector();
-            category = catArray.get(i);
-            v.add(category.getCatId());
-            v.add(category.getCategoryName());
-            v.add(category.getStat());
-            dtm.addRow(v);
+// Clear existing rows before reloading
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
+            dtm.removeRow(0);
         }
+
+        try (Session session = sf.openSession()) {
+
+            List<Category> categories = session.createQuery(
+                    "FROM Category",
+                    Category.class)
+                    .getResultList();
+
+            for (Category category : categories) {
+                Vector<Object> v = new Vector<>();
+                v.add(category.getCatId());
+                v.add(category.getCategoryName());
+                v.add(category.getStat());
+                dtm.addRow(v);
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load categories");
+            e.printStackTrace();
+        }
+
         jTable1.setModel(dtm);
         System.gc();
     }

@@ -12,19 +12,17 @@ import com.olympus.system.hawkdeskpos.db.util.Controller;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import java.awt.Graphics;
 import java.awt.Image;
-import java.awt.event.KeyEvent;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Vector;
 import javax.swing.ImageIcon;
+import javax.swing.JOptionPane;
 import javax.swing.table.DefaultTableModel;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import org.hibernate.criterion.MatchMode;
-import org.hibernate.criterion.Restrictions;
+import org.hibernate.persister.collection.mutation.RowMutationOperations.Restrictions;
 
 /**
  *
@@ -35,15 +33,12 @@ public class ViewStock extends javax.swing.JInternalFrame {
     /**
      * Creates new form ViewStock
      */
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
     NumberFormat f = null;
 
     public ViewStock() {
         super("View Stock", true, true, true);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
         f = NumberFormat.getNumberInstance();
         f.setMinimumFractionDigits(2);
         setTableValue("load");
@@ -55,65 +50,66 @@ public class ViewStock extends javax.swing.JInternalFrame {
     public void setTableValue(String stake) {
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
 
-        int r = jTable1.getRowCount();
-        for (int i = 0; i < r; i++) {
+// Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
             dtm.removeRow(0);
         }
 
-        Criteria cr = ses.createCriteria(Stock.class);
+        try (Session session = sf.openSession()) {
 
-//        if (stake.equals("search")) {
-//         cr.add(Restrictions.eq(stake, stake));
-//        }
-//        
-        cr.add(Restrictions.eq("stat", "available"));
-        ArrayList<Stock> stock = (ArrayList<Stock>) cr.list();
-        for (int i = 0; i < stock.size(); i++) {
-            Vector v = new Vector();
-            Stock stk = stock.get(i);
-            Item itm = stk.getItem();
-            Category ct = itm.getCategory();
+            List<Stock> stocks = session.createQuery(
+                    "FROM Stock s WHERE s.stat = :stat",
+                    Stock.class)
+                    .setParameter("stat", "available")
+                    .getResultList();
 
-            Date d2 = new Date(System.currentTimeMillis());
-            int ig = stk.getExpireDate().compareTo(d2);
+            Date today = new Date(System.currentTimeMillis());
 
-            if (stk.getQty() <= stk.getItem().getMinLevel()) {
-                v.add("<html><font color='#f00000' size='4'>" + itm.getItemId() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + itm.getItemName() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + ct.getCategoryName() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + stk.getBatch() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + stk.getExpireDate() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + stk.getQty() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + f.format(stk.getCost()) + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + f.format(stk.getPrice()) + "</font></html>");
+            for (Stock stk : stocks) {
+                Item itm = stk.getItem();
+                Category ct = itm.getCategory();
 
-            } else if (ig < 0) {
-                v.add("<html><font color='#ce00ff' size='4'>" + itm.getItemId() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + itm.getItemName() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + ct.getCategoryName() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + stk.getBatch() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + stk.getExpireDate() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + stk.getQty() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + f.format(stk.getCost()) + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + f.format(stk.getPrice()) + "</font></html>");
-            } else {
-                v.add("<html><font color='#00b300' size='4'>" + itm.getItemId() + "</font></html>");
-                v.add("<html><font color='#00b300' size='4'>" + itm.getItemName() + "</font></html>");
-                v.add("<html><font color='#00b300' size='4'>" + ct.getCategoryName() + "</font></html>");
-                v.add("<html><font color='#00b300' size='4'>" + stk.getBatch() + "</font></html>");
-                v.add("<html><font color='#00b300' size='4'>" + stk.getExpireDate() + "</font></html>");
-                v.add("<html><font color='#00b300' size='4'>" + stk.getQty() + "</font></html>");
-                v.add("<html><font color='#00b300' size='4'>" + f.format(stk.getCost()) + "</font></html>");
-                v.add("<html><font color='#00b300' size='4'>" + f.format(stk.getPrice()) + "</font></html>");
+                boolean isLowStock = stk.getQty() <= itm.getMinLevel();
+                boolean isExpired = stk.getExpireDate().compareTo(today) < 0;
 
+                // Determine row colour: red = low stock, purple = expired, green = ok
+                String color;
+                if (isLowStock) {
+                    color = "#f00000";
+                } else if (isExpired) {
+                    color = "#ce00ff";
+                } else {
+                    color = "#00b300";
+                }
+
+                // Helper to wrap a value in the chosen HTML colour
+                // Avoids repeating the HTML template 24 times across three branches
+                Vector<Object> v = new Vector<>();
+                v.add(htmlColor(color, itm.getItemId()));
+                v.add(htmlColor(color, itm.getItemName()));
+                v.add(htmlColor(color, ct.getCategoryName()));
+                v.add(htmlColor(color, stk.getBatch()));
+                v.add(htmlColor(color, stk.getExpireDate()));
+                v.add(htmlColor(color, stk.getQty()));
+                v.add(htmlColor(color, f.format(stk.getCost())));
+                v.add(htmlColor(color, f.format(stk.getPrice())));
+                dtm.addRow(v);
             }
 
-            dtm.addRow(v);
-            jTable1.setModel(dtm);
-
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load stock");
+            e.printStackTrace();
         }
+
+// Set model once after all rows are added — not inside the loop
+        jTable1.setModel(dtm);
         System.gc();
 
+    }
+
+    private String htmlColor(String color, Object value) {
+        return "<html><font color='" + color + "' size='4'>" + value + "</font></html>";
     }
 
     @SuppressWarnings("unchecked")
@@ -485,36 +481,45 @@ public class ViewStock extends javax.swing.JInternalFrame {
     private void jRadioButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButton2ActionPerformed
 
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        int r = jTable1.getRowCount();
-        for (int i = 0; i < r; i++) {
+
+// Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
             dtm.removeRow(0);
         }
-        Criteria cr = ses.createCriteria(Stock.class);
-        List lst = cr.list();
 
-        for (int i = 0; i < lst.size(); i++) {
-            Stock stock = (Stock) lst.get(i);
-            Item itm = (Item) ses.load(Item.class, stock.getItem().getItemId());
+        try (Session session = sf.openSession()) {
 
-            Date d2 = new Date(System.currentTimeMillis());
-            int ig = stock.getExpireDate().compareTo(d2);
+            Date today = new Date(System.currentTimeMillis());
 
-            Vector v = new Vector();
-            if (ig < 0) {
+            // Filter expired stock directly in HQL — avoids loading all stock into memory
+            List<Stock> stocks = session.createQuery(
+                    "FROM Stock s WHERE s.expireDate < :today",
+                    Stock.class)
+                    .setParameter("today", today)
+                    .getResultList();
 
-                v.add("<html><font color='#ce00ff' size='4'>" + itm.getItemId() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + itm.getItemName() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + itm.getCategory().getCategoryName() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + stock.getBatch() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + stock.getExpireDate() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + stock.getQty() + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + f.format(stock.getCost()) + "</font></html>");
-                v.add("<html><font color='#ce00ff' size='4'>" + f.format(stock.getPrice()) + "</font></html>");
+            for (Stock stock : stocks) {
+                Item itm = stock.getItem();
+                Category ct = itm.getCategory();
 
+                Vector<Object> v = new Vector<>();
+                v.add(htmlColor("#ce00ff", itm.getItemId()));
+                v.add(htmlColor("#ce00ff", itm.getItemName()));
+                v.add(htmlColor("#ce00ff", ct.getCategoryName()));
+                v.add(htmlColor("#ce00ff", stock.getBatch()));
+                v.add(htmlColor("#ce00ff", stock.getExpireDate()));
+                v.add(htmlColor("#ce00ff", stock.getQty()));
+                v.add(htmlColor("#ce00ff", f.format(stock.getCost())));
+                v.add(htmlColor("#ce00ff", f.format(stock.getPrice())));
                 dtm.addRow(v);
             }
 
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load expired stock");
+            e.printStackTrace();
         }
+
         jTable1.setModel(dtm);
     }//GEN-LAST:event_jRadioButton2ActionPerformed
 
@@ -524,21 +529,40 @@ public class ViewStock extends javax.swing.JInternalFrame {
 
     private void btnAddStockActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddStockActionPerformed
 
-        int r = jTable1.getSelectedRowCount();
-        if (r == 0) {
+        int selectedRow = jTable1.getSelectedRow();
+
+        if (selectedRow == -1) {
+            // No row selected — open blank AddStock form
             AddStock stock = new AddStock();
             Home.HomeDeskpane.add(stock);
             stock.setVisible(true);
-        } else {
-            String s = jTable1.getValueAt(jTable1.getSelectedRow(), 0).toString();
-            String ss = s.substring(37);
-            int i = ss.indexOf('<');
-            String sss = ss.substring(0, i);
 
-            int id = Integer.parseInt(sss);
-            AddStock stock = new AddStock((Item) ses.load(Item.class, id));
-            Home.HomeDeskpane.add(stock);
-            stock.setVisible(true);
+        } else {
+            try (Session session = sf.openSession()) {
+
+                // Strip HTML tags from the item ID cell to extract the plain integer
+                // Cell format: <html><font color='...' size='4'>ID</font></html>
+                String cellValue = jTable1.getValueAt(selectedRow, 0).toString();
+                String stripped = cellValue.replaceAll("<[^>]*>", "").trim();
+                int itemId = Integer.parseInt(stripped);
+
+                Item item = session.get(Item.class, itemId);
+                if (item == null) {
+                    JOptionPane.showMessageDialog(this, "Item not found");
+                    return;
+                }
+
+                AddStock stock = new AddStock(item);
+                Home.HomeDeskpane.add(stock);
+                stock.setVisible(true);
+
+            } catch (NumberFormatException e) {
+                JOptionPane.showMessageDialog(this, "Invalid item ID in selected row");
+                e.printStackTrace();
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, "Failed to load item");
+                e.printStackTrace();
+            }
         }
     }//GEN-LAST:event_btnAddStockActionPerformed
 
@@ -552,45 +576,49 @@ public class ViewStock extends javax.swing.JInternalFrame {
     private void lstCategoryMouseClicked(java.awt.event.MouseEvent evt) {//GEN-FIRST:event_lstCategoryMouseClicked
 
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        int r = jTable1.getRowCount();
-        for (int i = 0; i < r; i++) {
+
+// Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
             dtm.removeRow(0);
         }
 
-        String cat = lstCategory.getSelectedValue().toString();
-        Criteria cr = ses.createCriteria(Category.class);
+        if (lstCategory.getSelectedValue() == null) {
+            JOptionPane.showMessageDialog(this, "Please select a category");
+            return;
+        }
 
-        cr.add(Restrictions.eq("categoryName", cat));
+        String selectedCategory = lstCategory.getSelectedValue().toString();
 
-        Category c = (Category) cr.uniqueResult();
-        Criteria cr2 = ses.createCriteria(Item.class);
+        try (Session session = sf.openSession()) {
 
-        cr2.add(Restrictions.eq("category", c));
-        List lst = cr2.list();
+            // Fetch all stock for items in the selected category in one HQL join query
+            // Avoids N+1 queries (one per item) from the original nested Criteria loops
+            List<Stock> stocks = session.createQuery(
+                    "FROM Stock s WHERE s.item.category.categoryName = :catName",
+                    Stock.class)
+                    .setParameter("catName", selectedCategory)
+                    .getResultList();
 
-        for (int i = 0; i < lst.size(); i++) {
-            Item item = (Item) lst.get(i);
-
-            Criteria c3 = ses.createCriteria(Stock.class);
-            c3.add(Restrictions.eq("item", item));
-            ArrayList<Stock> stk = (ArrayList<Stock>) c3.list();
-
-            for (int j = 0; j < stk.size(); j++) {
-                Stock stock = stk.get(j);
-                Vector v = new Vector();
-
-                v.add(stock.getItem().getItemId());
-                v.add(stock.getItem().getItemName());
+            for (Stock stock : stocks) {
+                Item item = stock.getItem();
+                Vector<Object> v = new Vector<>();
+                v.add(item.getItemId());
+                v.add(item.getItemName());
                 v.add(item.getCategory().getCategoryName());
                 v.add(stock.getBatch());
                 v.add(stock.getExpireDate());
                 v.add(stock.getQty());
                 v.add(stock.getCost());
                 v.add(stock.getPrice());
-
                 dtm.addRow(v);
             }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load stock by category");
+            e.printStackTrace();
         }
+
         jTable1.setModel(dtm);
 
     }//GEN-LAST:event_lstCategoryMouseClicked
@@ -598,38 +626,41 @@ public class ViewStock extends javax.swing.JInternalFrame {
     private void jRadioButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButton1ActionPerformed
 
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        int r = jTable1.getRowCount();
-        for (int i = 0; i < r; i++) {
+
+// Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
             dtm.removeRow(0);
         }
 
-        Criteria cr = ses.createCriteria(Stock.class);
-        List ls = cr.list();
+        try (Session session = sf.openSession()) {
 
-        for (int i = 0; i < ls.size(); i++) {
-            Stock stock = (Stock) ls.get(i);
+            // Filter low stock directly in HQL — avoids loading all stock into memory
+            // and eliminates the redundant ses.load(Item.class) call per row (N+1)
+            List<Stock> stocks = session.createQuery(
+                    "FROM Stock s WHERE s.qty <= s.item.minLevel",
+                    Stock.class)
+                    .getResultList();
 
-            Item itm = (Item) ses.load(Item.class, stock.getItem().getItemId());
-
-            int sq = stock.getQty();
-            int iq = itm.getMinLevel();
-
-            Vector v = new Vector();
-            if (sq <= iq) {
-
-                v.add("<html><font color='#f00000' size='4'>" + itm.getItemId() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + itm.getItemName() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + itm.getCategory().getCategoryName() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + stock.getBatch() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + stock.getExpireDate() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + stock.getQty() + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + f.format(stock.getCost()) + "</font></html>");
-                v.add("<html><font color='#f00000' size='4'>" + f.format(stock.getPrice()) + "</font></html>");
-
+            for (Stock stock : stocks) {
+                Item item = stock.getItem();
+                Vector<Object> v = new Vector<>();
+                v.add(htmlColor("#f00000", item.getItemId()));
+                v.add(htmlColor("#f00000", item.getItemName()));
+                v.add(htmlColor("#f00000", item.getCategory().getCategoryName()));
+                v.add(htmlColor("#f00000", stock.getBatch()));
+                v.add(htmlColor("#f00000", stock.getExpireDate()));
+                v.add(htmlColor("#f00000", stock.getQty()));
+                v.add(htmlColor("#f00000", f.format(stock.getCost())));
+                v.add(htmlColor("#f00000", f.format(stock.getPrice())));
                 dtm.addRow(v);
-
             }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load minimum stock items");
+            e.printStackTrace();
         }
+
         jTable1.setModel(dtm);
     }//GEN-LAST:event_jRadioButton1ActionPerformed
 
@@ -641,64 +672,65 @@ public class ViewStock extends javax.swing.JInternalFrame {
     private void txtSearchKeyReleased(java.awt.event.KeyEvent evt) {//GEN-FIRST:event_txtSearchKeyReleased
 
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        int i = jTable1.getRowCount();
-        for (int j = 0; j < i; j++) {
+
+// Clear existing rows
+        int rowCount = jTable1.getRowCount();
+        for (int i = 0; i < rowCount; i++) {
             dtm.removeRow(0);
         }
 
-        if (!txtSearch.getText().equals("")) {
-            Criteria cr = ses.createCriteria(Stock.class, "S");
-            cr.createAlias("S.item", "i");
-            cr.add(Restrictions.like("i.itemName", txtSearch.getText(), MatchMode.ANYWHERE));
-            List<Object> lst = cr.list();
-            for (Object object : lst) {
-                Stock stk = (Stock) object;
-                Vector v = new Vector();
+        String searchText = txtSearch.getText().trim();
 
-                Criteria crt = ses.createCriteria(Item.class);
-                crt.add(Restrictions.eq("itemId", stk.getItem().getItemId()));
-                Item it = (Item) crt.uniqueResult();
+        if (!searchText.isEmpty()) {
+            try (Session session = sf.openSession()) {
 
-                Date d2 = new Date(System.currentTimeMillis());
-                int ig = stk.getExpireDate().compareTo(d2);
+                // Single HQL join query replaces Criteria alias + per-row Item lookup (N+1)
+                List<Stock> stocks = session.createQuery(
+                        "FROM Stock s WHERE s.item.itemName LIKE :search",
+                        Stock.class)
+                        .setParameter("search", "%" + searchText + "%")
+                        .getResultList();
 
-                if (stk.getQty() <= stk.getItem().getMinLevel()) {
-                    v.add("<html><font color='#f00000' size='4'>" + it.getItemId() + "</font></html>");
-                    v.add("<html><font color='#f00000' size='4'>" + it.getItemName() + "</font></html>");
-                    v.add("<html><font color='#f00000' size='4'>" + stk.getItem().getCategory().getCategoryName() + "</font></html>");
-                    v.add("<html><font color='#f00000' size='4'>" + stk.getBatch() + "</font></html>");
-                    v.add("<html><font color='#f00000' size='4'>" + stk.getExpireDate() + "</font></html>");
-                    v.add("<html><font color='#f00000' size='4'>" + stk.getQty() + "</font></html>");
-                    v.add("<html><font color='#f00000' size='4'>" + f.format(stk.getCost()) + "</font></html>");
-                    v.add("<html><font color='#f00000' size='4'>" + f.format(stk.getPrice()) + "</font></html>");
+                Date today = new Date(System.currentTimeMillis());
 
-                } else if (ig < 0) {
-                    v.add("<html><font color='#ce00ff' size='4'>" + it.getItemId() + "</font></html>");
-                    v.add("<html><font color='#ce00ff' size='4'>" + it.getItemName() + "</font></html>");
-                    v.add("<html><font color='#ce00ff' size='4'>" + stk.getItem().getCategory().getCategoryName() + "</font></html>");
-                    v.add("<html><font color='#ce00ff' size='4'>" + stk.getBatch() + "</font></html>");
-                    v.add("<html><font color='#ce00ff' size='4'>" + stk.getExpireDate() + "</font></html>");
-                    v.add("<html><font color='#ce00ff' size='4'>" + stk.getQty() + "</font></html>");
-                    v.add("<html><font color='#ce00ff' size='4'>" + f.format(stk.getCost()) + "</font></html>");
-                    v.add("<html><font color='#ce00ff' size='4'>" + f.format(stk.getPrice()) + "</font></html>");
-                } else {
-                    v.add("<html><font color='#00b300' size='4'>" + it.getItemId() + "</font></html>");
-                    v.add("<html><font color='#00b300' size='4'>" + it.getItemName() + "</font></html>");
-                    v.add("<html><font color='#00b300' size='4'>" + stk.getItem().getCategory().getCategoryName() + "</font></html>");
-                    v.add("<html><font color='#00b300' size='4'>" + stk.getBatch() + "</font></html>");
-                    v.add("<html><font color='#00b300' size='4'>" + stk.getExpireDate() + "</font></html>");
-                    v.add("<html><font color='#00b300' size='4'>" + stk.getQty() + "</font></html>");
-                    v.add("<html><font color='#00b300' size='4'>" + f.format(stk.getCost()) + "</font></html>");
-                    v.add("<html><font color='#00b300' size='4'>" + f.format(stk.getPrice()) + "</font></html>");
+                for (Stock stk : stocks) {
+                    Item item = stk.getItem();
 
+                    boolean isLowStock = stk.getQty() <= item.getMinLevel();
+                    boolean isExpired = stk.getExpireDate().compareTo(today) < 0;
+
+                    String color;
+                    if (isLowStock) {
+                        color = "#f00000";
+                    } else if (isExpired) {
+                        color = "#ce00ff";
+                    } else {
+                        color = "#00b300";
+                    }
+
+                    Vector<Object> v = new Vector<>();
+                    v.add(htmlColor(color, item.getItemId()));
+                    v.add(htmlColor(color, item.getItemName()));
+                    v.add(htmlColor(color, item.getCategory().getCategoryName()));
+                    v.add(htmlColor(color, stk.getBatch()));
+                    v.add(htmlColor(color, stk.getExpireDate()));
+                    v.add(htmlColor(color, stk.getQty()));
+                    v.add(htmlColor(color, f.format(stk.getCost())));
+                    v.add(htmlColor(color, f.format(stk.getPrice())));
+                    dtm.addRow(v);
                 }
 
-                dtm.addRow(v);
-                jTable1.setModel(dtm);
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, "Failed to search stock");
+                e.printStackTrace();
             }
+
+            jTable1.setModel(dtm);
+
         } else {
             setTableValue("load");
         }
+
         System.gc();
     }//GEN-LAST:event_txtSearchKeyReleased
 
@@ -731,15 +763,23 @@ public class ViewStock extends javax.swing.JInternalFrame {
     // End of variables declaration//GEN-END:variables
 
     private void setCategory() {
+        Vector<String> v = new Vector<>();
 
-        Vector v = new Vector();
-        Criteria cr = ses.createCriteria(Category.class);
-        List lst = cr.list();
-        for (int i = 0; i < lst.size(); i++) {
-            Category category = (Category) lst.get(i);
-            v.add(category.getCategoryName());
+        try (Session session = sf.openSession()) {
+            List<Category> categories = session.createQuery(
+                    "FROM Category",
+                    Category.class)
+                    .getResultList();
 
+            for (Category category : categories) {
+                v.add(category.getCategoryName());
+            }
+
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Failed to load categories");
+            e.printStackTrace();
         }
+
         lstCategory.setListData(v);
     }
 }

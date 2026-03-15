@@ -3,20 +3,18 @@
  * To change this template file, choose Tools | Templates
  * and open the template in the editor.
  */
-
 package com.olympus.system.hawkdeskpos.frontend.finance;
 
 import com.olympus.system.hawkdeskpos.db.dao.Grn;
 import com.olympus.system.hawkdeskpos.db.dao.Grninfo;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Vector;
 import javax.swing.table.DefaultTableModel;
-import org.hibernate.Criteria;
 import org.hibernate.Session;
 import org.hibernate.SessionFactory;
-import static org.hibernate.annotations.SourceType.DB;
-import org.hibernate.criterion.Restrictions;
+import org.hibernate.persister.collection.mutation.RowMutationOperations.Restrictions;
 
 /**
  *
@@ -27,16 +25,14 @@ public class GrnItems extends javax.swing.JInternalFrame {
     /**
      * Creates new form GrnItems
      */
-    SessionFactory sf = null;
-    Session ses = null;
+    private static final SessionFactory sf = Controller.getSessionFactory();
+
     public GrnItems() {
-        super("Grn Item Details",true,true,true,false);
+        super("Grn Item Details", true, true, true, false);
         initComponents();
-        sf = Controller.getSessionFactory();
-        ses = sf.openSession();
     }
-    
-    public GrnItems(Grninfo info){
+
+    public GrnItems(Grninfo info) {
         this();
         lblGrnNo.setText(info.getGrnNo().toString());
         lbldate.setText(info.getDate().toString());
@@ -189,24 +185,30 @@ public class GrnItems extends javax.swing.JInternalFrame {
 
     private void setTable(Grninfo info) {
         DefaultTableModel dtm = (DefaultTableModel) jTable1.getModel();
-        Grninfo grnIn = info;
-        Criteria cr = ses.createCriteria(Grn.class);
-        cr.add(Restrictions.eq("grninfo", grnIn));
-        ArrayList<Grn> lst = (ArrayList<Grn>) cr.list();
-        for (int i = 0; i < lst.size(); i++) {
-            Grn grn = lst.get(i);
-            Vector v = new Vector();
-            v.add(grn.getItem().getItemId());
-            v.add(grn.getItem().getItemName());
-            v.add(grn.getExpireDate());
-            v.add(grn.getItemQty());
-            v.add(grn.getItemCost());
-            v.add(grn.getItemPrice());
-            
-            dtm.addRow(v);
+
+        try (Session session = sf.openSession()) {
+
+            List<Grn> lst = session.createQuery(
+                    "FROM Grn g WHERE g.grninfo = :info",
+                    Grn.class)
+                    .setParameter("info", info)
+                    .getResultList();
+
+            for (Grn grn : lst) {
+                Vector<Object> v = new Vector<>();
+                v.add(grn.getItem().getItemId());
+                v.add(grn.getItem().getItemName());
+                v.add(grn.getExpireDate());
+                v.add(grn.getItemQty());
+                v.add(grn.getItemCost());
+                v.add(grn.getItemPrice());
+                dtm.addRow(v);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        
+
         jTable1.setModel(dtm);
-        
     }
 }
