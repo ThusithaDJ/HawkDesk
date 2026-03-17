@@ -1,0 +1,131 @@
+<!-- Created with Jaspersoft Studio version 7.0.3.final using JasperReports Library version 7.0.3-41034ca841d452f3305ba55b9042260aaa1ab5dd  -->
+<jasperReport name="invoice" language="java" columnCount="1" pageWidth="210" pageHeight="297" whenNoDataType="NoPages" columnWidth="182" leftMargin="14" rightMargin="14" topMargin="44" bottomMargin="28" uuid="2eee4c91-6b61-404c-afd5-dcc2b0b19619">
+	<property name="ireport.encoding" value="UTF-8"/>
+	<property name="com.jaspersoft.studio.data.defaultdataadapter" value="Docker Mysql"/>
+	<import>net.sf.jasperreports.engine.*</import>
+	<import>java.util.*</import>
+	<import>net.sf.jasperreports.engine.data.*</import>
+	<parameter name="invoiceId" class="java.lang.Integer"/>
+	<parameter name="BusinessName" evaluationTime="Early" class="java.lang.String"/>
+	<parameter name="BusinessAddress" class="java.lang.String"/>
+	<query language="sql"><![CDATA[SELECT * FROM invoice i, item it, invoiceinfo ii
+                 WHERE i.itemId = it.itemId
+                   AND ii.invoiceNo = i.invoiceNo
+                   AND i.invoiceNo = $P{invoiceId}]]></query>
+	<field name="id" class="java.lang.Integer"/>
+	<field name="invoiceNo" class="java.lang.Integer"/>
+	<field name="itemId" class="java.lang.Integer"/>
+	<field name="stockId" class="java.lang.Integer"/>
+	<field name="batch" class="java.lang.String"/>
+	<field name="dateTime" class="java.sql.Date"/>
+	<field name="qty" class="java.lang.Integer"/>
+	<field name="subTotal" class="java.lang.Double"/>
+	<field name="brandId" class="java.lang.Integer"/>
+	<field name="catId" class="java.lang.Integer"/>
+	<field name="itemName" class="java.lang.String"/>
+	<field name="minLevel" class="java.lang.String"/>
+	<field name="stat" class="java.lang.String"/>
+	<field name="date" class="java.sql.Date"/>
+	<field name="total" class="java.lang.Double"/>
+	<field name="paid" class="java.lang.Double"/>
+	<field name="discount" class="java.lang.Double"/>
+	<variable name="netAmount" calculation="Sum" class="java.lang.Double">
+		<expression><![CDATA[$F{subTotal}]]></expression>
+		<initialValueExpression><![CDATA[0.0]]></initialValueExpression>
+	</variable>
+	<variable name="balance" class="java.lang.Double">
+		<expression><![CDATA[$V{netAmount} - $F{discount} - $F{paid}]]></expression>
+		<initialValueExpression><![CDATA[0.0]]></initialValueExpression>
+	</variable>
+	<background splitType="Stretch"/>
+	<title height="73" splitType="Stretch">
+		<element kind="textField" uuid="158d2338-c64d-4772-bd73-01d14782cbe2" x="0" y="0" width="182" height="15" hTextAlign="Center">
+			<expression><![CDATA[$P{BusinessName}]]></expression>
+		</element>
+		<element kind="textField" uuid="d20d5b95-fd9f-48cb-95f7-64df30100dad" x="0" y="15" width="182" height="15" hTextAlign="Center">
+			<expression><![CDATA[$P{BusinessAddress}]]></expression>
+		</element>
+	</title>
+	<pageHeader height="50" splitType="Stretch">
+		<element kind="staticText" uuid="75c0b737-2f85-4dbf-8c4c-e308e7c58bc3" x="0" y="0" width="55" height="18" fontSize="10.0">
+			<text><![CDATA[Invoice No]]></text>
+		</element>
+		<element kind="staticText" uuid="0ee95cd3-e71e-4e45-90b7-4d78c82acd3d" x="0" y="18" width="55" height="18" fontSize="10.0">
+			<text><![CDATA[Date]]></text>
+		</element>
+		<element kind="textField" uuid="ab675121-6fa9-464f-be0d-aa1461fde257" x="62" y="0" width="100" height="18" fontSize="10.0" blankWhenNull="false">
+			<expression><![CDATA[$P{invoiceId}]]></expression>
+		</element>
+		<element kind="textField" uuid="7ce52475-e638-4317-8115-3e3798574b63" x="62" y="18" width="100" height="18" fontSize="10.0" blankWhenNull="false">
+			<expression><![CDATA[$F{dateTime}]]></expression>
+		</element>
+		<element kind="line" uuid="9e1cdd3f-2459-44dc-93fc-d85a0493cbe7" x="0" y="49" width="184" height="1">
+			<pen lineWidth="0.5"/>
+		</element>
+	</pageHeader>
+	<columnHeader height="25" splitType="Stretch">
+		<element kind="staticText" uuid="6c5def80-ca57-4b17-92af-7f16fa5ad27f" x="0" y="0" width="89" height="19" fontSize="10.0" vTextAlign="Middle">
+			<text><![CDATA[Item]]></text>
+		</element>
+		<element kind="staticText" uuid="144d077c-ba9a-46db-ac04-c8e0853ca469" x="96" y="0" width="28" height="19" fontSize="10.0" vTextAlign="Middle">
+			<text><![CDATA[Qty]]></text>
+		</element>
+		<element kind="staticText" uuid="88e15549-19eb-4aa5-ae7e-356c614b370e" x="126" y="0" width="56" height="19" fontSize="10.0" hTextAlign="Right" vTextAlign="Middle">
+			<text><![CDATA[Amount]]></text>
+		</element>
+		<element kind="line" uuid="2ab50fdf-1b0d-4dcc-a5de-b50cc22113d2" x="0" y="21" width="184" height="1">
+			<pen lineWidth="0.5"/>
+		</element>
+	</columnHeader>
+	<detail>
+		<band height="20" splitType="Stretch">
+			<element kind="textField" uuid="529e1952-6c44-433e-8ef1-9bb089a5e13f" x="0" y="0" width="89" height="18" fontSize="10.0" blankWhenNull="false">
+				<expression><![CDATA[$F{itemName}]]></expression>
+			</element>
+			<element kind="textField" uuid="c25f39f2-e074-49d6-90e2-be932d252ab2" x="96" y="0" width="29" height="18" fontSize="10.0" blankWhenNull="false">
+				<expression><![CDATA[$F{qty}]]></expression>
+			</element>
+			<element kind="textField" uuid="7319a65d-ae4c-46bf-9444-93e161a4c23f" x="126" y="0" width="56" height="18" fontSize="10.0" pattern="##0.00" blankWhenNull="false" hTextAlign="Right">
+				<expression><![CDATA[$F{subTotal}]]></expression>
+			</element>
+		</band>
+	</detail>
+	<columnFooter splitType="Stretch"/>
+	<pageFooter splitType="Stretch"/>
+	<summary height="150" splitType="Stretch">
+		<element kind="line" uuid="43562fb2-633b-405d-8b5f-88813c5bf587" x="0" y="4" width="184" height="1">
+			<pen lineWidth="0.5"/>
+		</element>
+		<element kind="staticText" uuid="66685584-fbf4-4b95-81de-9e459e85f078" x="0" y="6" width="79" height="27" fontSize="14.0" bold="true">
+			<text><![CDATA[Net Amount]]></text>
+		</element>
+		<element kind="textField" uuid="15c7d892-51fc-460e-9d9f-c8a1f18394d2" x="84" y="6" width="98" height="27" fontSize="14.0" pattern="##0.00" blankWhenNull="false" bold="true" hTextAlign="Right">
+			<expression><![CDATA[$V{netAmount}]]></expression>
+		</element>
+		<element kind="staticText" uuid="4606e73e-1345-412e-bfa8-0bec4e9373af" x="0" y="33" width="79" height="19" fontSize="12.0">
+			<text><![CDATA[Paid Amount]]></text>
+		</element>
+		<element kind="textField" uuid="97af38b4-6a73-4b9d-b349-24437b5873f7" x="84" y="33" width="98" height="18" fontSize="12.0" pattern="##0.00" blankWhenNull="false" hTextAlign="Right">
+			<expression><![CDATA[$F{paid}]]></expression>
+		</element>
+		<element kind="staticText" uuid="3497d3bd-1ab9-44aa-af29-fb1b6b100873" x="0" y="52" width="79" height="27" fontSize="12.0">
+			<text><![CDATA[Discount]]></text>
+		</element>
+		<element kind="textField" uuid="fa49684c-9285-4d3e-8af1-80da80ca99ec" x="84" y="52" width="98" height="18" fontSize="12.0" pattern="##0.00" blankWhenNull="false" hTextAlign="Right">
+			<expression><![CDATA[$F{discount}]]></expression>
+		</element>
+		<element kind="staticText" uuid="461d86bd-9c49-47d9-b639-ccf90feee7c0" x="0" y="79" width="79" height="27" fontSize="12.0">
+			<text><![CDATA[Balance]]></text>
+		</element>
+		<element kind="textField" uuid="4dd2011e-b0a9-4cd3-aa8c-f5cad08b8a24" x="84" y="79" width="98" height="18" fontSize="12.0" evaluationTime="Report" pattern="##0.00" blankWhenNull="false" hTextAlign="Right">
+			<expression><![CDATA[$V{netAmount} - $F{discount} - $F{paid}]]></expression>
+		</element>
+		<element kind="line" uuid="0635d0e4-471e-4688-9576-b5dff29b169f" x="0" y="113" width="184" height="1">
+			<pen lineWidth="0.5"/>
+		</element>
+		<element kind="staticText" uuid="4a3ffda2-4a98-4a23-8d82-6a03432ec85c" x="0" y="113" width="177" height="27" fontSize="8.0" hTextAlign="Center">
+			<text><![CDATA[Olympus Intelligence Systems
+Tel: 077-1844682]]></text>
+		</element>
+	</summary>
+</jasperReport>
