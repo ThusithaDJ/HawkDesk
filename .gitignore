@@ -39,5 +39,8 @@ bin/
 ### VS Code ###
 .vscode/
 
+### Maven ###
+target/
+
 ### Mac OS ###
 .DS_Store
