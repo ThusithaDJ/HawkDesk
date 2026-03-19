@@ -19,10 +19,10 @@
         <property name="hibernate.hbm2ddl.auto">validate</property>
 
         <!-- HikariCP connection pool -->
-        <property name="hibernate.connection.provider_class">org.hibernate.hikaricp.internal.HikariCPConnectionProvider</property>
+<!--        <property name="hibernate.connection.provider_class">org.hibernate.hikaricp.internal.HikariCPConnectionProvider</property>
         <property name="hibernate.hikari.minimumIdle">2</property>
         <property name="hibernate.hikari.maximumPoolSize">10</property>
-        <property name="hibernate.hikari.idleTimeout">30000</property>
+        <property name="hibernate.hikari.idleTimeout">30000</property>-->
 
         <!-- Existing entities -->
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Brands"/>
