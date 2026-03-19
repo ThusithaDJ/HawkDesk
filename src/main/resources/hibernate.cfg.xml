@@ -6,41 +6,39 @@
 <hibernate-configuration>
     <session-factory>
 
-        <!-- Database connection -->
         <property name="hibernate.connection.driver_class">com.mysql.cj.jdbc.Driver</property>
-        <property name="hibernate.connection.url">jdbc:mysql://localhost:3306/pharmacy?zeroDateTimeBehavior=convertToNull</property>
+        <property name="hibernate.connection.url">jdbc:mysql://localhost:3306/hawkdeskpos?createDatabaseIfNotExist=true&amp;zeroDateTimeBehavior=convertToNull&amp;serverTimezone=UTC</property>
         <property name="hibernate.connection.username">root</property>
         <property name="hibernate.connection.password">1234</property>
 
-        <!-- Hibernate 6 requires this dialect -->
         <property name="hibernate.dialect">org.hibernate.dialect.MySQLDialect</property>
+        <property name="hibernate.show_sql">false</property>
+        <property name="hibernate.format_sql">false</property>
 
-        <!-- HikariCP connection pool -->
-<!--        <property name="hibernate.connection.provider_class">
-            org.hibernate.hikaricp.internal.HikariCPConnectionProvider
-        </property>
-        <property name="hibernate.hikari.minimumIdle">2</property>
-        <property name="hibernate.hikari.maximumPoolSize">10</property>
-        <property name="hibernate.hikari.idleTimeout">30000</property>-->
-
-        <!-- Optional: show SQL in console for debugging -->
-        <property name="hibernate.show_sql">true</property>
-        <property name="hibernate.format_sql">true</property>
-
-        <!-- Schema handling -->
-        <!-- use 'validate' in production, 'update' during development -->
+        <!-- Flyway owns the schema — Hibernate only validates -->
         <property name="hibernate.hbm2ddl.auto">validate</property>
 
-        <!-- Annotated entity classes (replaces .hbm.xml) -->
-        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Invoiceinfo"/>
-        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Stock"/>
+        <!-- HikariCP connection pool -->
+        <property name="hibernate.connection.provider_class">org.hibernate.hikaricp.internal.HikariCPConnectionProvider</property>
+        <property name="hibernate.hikari.minimumIdle">2</property>
+        <property name="hibernate.hikari.maximumPoolSize">10</property>
+        <property name="hibernate.hikari.idleTimeout">30000</property>
+
+        <!-- Existing entities -->
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Brands"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Category"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Item"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Grninfo"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Grn"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Stock"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Invoiceinfo"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Invoice"/>
-        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Item"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Return"/>
+        <!-- New entities -->
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Employee"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.UserPermissions"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.StockAdjustment"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.AuditLog"/>
 
     </session-factory>
 </hibernate-configuration>

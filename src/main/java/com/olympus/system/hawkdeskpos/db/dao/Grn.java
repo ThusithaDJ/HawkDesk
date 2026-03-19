@@ -4,11 +4,8 @@ import jakarta.persistence.*;
 import java.io.Serializable;
 import java.util.Date;
 
-/**
- * Grn — upgraded to Hibernate 6 / Jakarta Persistence 3.x
- */
 @Entity
-@Table(name = "grn", catalog = "pharmacy")
+@Table(name = "grn")
 public class Grn implements Serializable {
 
     @Id
@@ -17,99 +14,41 @@ public class Grn implements Serializable {
     private Integer no;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "itemId", nullable = false)
+    @JoinColumn(name = "item_id")
     private Item item;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "grnNo", nullable = false)
+    @JoinColumn(name = "grn_no")
     private Grninfo grninfo;
 
     @Temporal(TemporalType.DATE)
-    @Column(name = "expireDate")
+    @Column(name = "expire_date")
     private Date expireDate;
 
-    @Column(name = "itemQty")
+    @Column(name = "item_qty")
     private Integer itemQty;
 
-    @Column(name = "itemCost", precision = 22, scale = 0)
+    @Column(name = "item_cost")
     private Double itemCost;
 
-    @Column(name = "itemPrice", precision = 22, scale = 0)
+    @Column(name = "item_price")
     private Double itemPrice;
 
-    // ── Constructors ────────────────────────────────────────────────────────
-    public Grn() {
-    }
+    public Grn() {}
+    public Grn(Item item, Grninfo grninfo) { this.item = item; this.grninfo = grninfo; }
 
-    public Grn(Item item, Grninfo grninfo) {
-        this.item = item;
-        this.grninfo = grninfo;
-    }
-
-    public Grn(Item item, Grninfo grninfo, Date expireDate,
-            Integer itemQty, Double itemCost, Double itemPrice) {
-        this.item = item;
-        this.grninfo = grninfo;
-        this.expireDate = expireDate;
-        this.itemQty = itemQty;
-        this.itemCost = itemCost;
-        this.itemPrice = itemPrice;
-    }
-
-    // ── Getters & Setters ────────────────────────────────────────────────────
-    public Integer getNo() {
-        return no;
-    }
-
-    public void setNo(Integer no) {
-        this.no = no;
-    }
-
-    public Item getItem() {
-        return item;
-    }
-
-    public void setItem(Item item) {
-        this.item = item;
-    }
-
-    public Grninfo getGrninfo() {
-        return grninfo;
-    }
-
-    public void setGrninfo(Grninfo grninfo) {
-        this.grninfo = grninfo;
-    }
-
-    public Date getExpireDate() {
-        return expireDate;
-    }
-
-    public void setExpireDate(Date expireDate) {
-        this.expireDate = expireDate;
-    }
-
-    public Integer getItemQty() {
-        return itemQty;
-    }
-
-    public void setItemQty(Integer itemQty) {
-        this.itemQty = itemQty;
-    }
-
-    public Double getItemCost() {
-        return itemCost;
-    }
-
-    public void setItemCost(Double itemCost) {
-        this.itemCost = itemCost;
-    }
-
-    public Double getItemPrice() {
-        return itemPrice;
-    }
-
-    public void setItemPrice(Double itemPrice) {
-        this.itemPrice = itemPrice;
-    }
+    public Integer getNo() { return no; }
+    public void setNo(Integer no) { this.no = no; }
+    public Item getItem() { return item; }
+    public void setItem(Item item) { this.item = item; }
+    public Grninfo getGrninfo() { return grninfo; }
+    public void setGrninfo(Grninfo grninfo) { this.grninfo = grninfo; }
+    public Date getExpireDate() { return expireDate; }
+    public void setExpireDate(Date expireDate) { this.expireDate = expireDate; }
+    public Integer getItemQty() { return itemQty; }
+    public void setItemQty(Integer itemQty) { this.itemQty = itemQty; }
+    public Double getItemCost() { return itemCost; }
+    public void setItemCost(Double itemCost) { this.itemCost = itemCost; }
+    public Double getItemPrice() { return itemPrice; }
+    public void setItemPrice(Double itemPrice) { this.itemPrice = itemPrice; }
 }

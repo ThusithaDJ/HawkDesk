@@ -15,6 +15,14 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.13.0</version>
+                <configuration>
+                    <release>17</release>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-shade-plugin</artifactId>
                 <version>3.6.0</version>
                 <executions>
@@ -59,14 +67,30 @@
             <plugin>
                 <groupId>org.flywaydb</groupId>
                 <artifactId>flyway-maven-plugin</artifactId>
-                <version>11.17.0</version> 
+                <version>11.17.0</version>
                 <configuration>
+                    <url>jdbc:mysql://localhost:3306/hawkdeskpos?createDatabaseIfNotExist=true&amp;zeroDateTimeBehavior=convertToNull</url>
                     <user>root</user>
                     <password>1234</password>
                     <schemas>
-                        <schema>jdbc:mysql://localhost:3306/hawkdeskpos</schema>
+                        <schema>hawkdeskpos</schema>
                     </schemas>
+                    <locations>
+                        <location>classpath:db/migration</location>
+                    </locations>
                 </configuration>
+                <dependencies>
+                    <dependency>
+                        <groupId>com.mysql</groupId>
+                        <artifactId>mysql-connector-j</artifactId>
+                        <version>8.3.0</version>
+                    </dependency>
+                    <dependency>
+                        <groupId>org.flywaydb</groupId>
+                        <artifactId>flyway-mysql</artifactId>
+                        <version>11.17.0</version>
+                    </dependency>
+                </dependencies>
             </plugin>
         </plugins>
     </build>
@@ -143,10 +167,17 @@
             <artifactId>HikariCP</artifactId>
             <version>5.1.0</version>
         </dependency>
+        <!-- BCrypt for PIN hashing -->
         <dependency>
-            <groupId>unknown.binary</groupId>
-            <artifactId>analog-clock-1.2.0</artifactId>
-            <version>SNAPSHOT</version>
+            <groupId>org.mindrot</groupId>
+            <artifactId>jbcrypt</artifactId>
+            <version>0.4</version>
+        </dependency>
+        <!-- JFreeChart for Reports screen -->
+        <dependency>
+            <groupId>org.jfree</groupId>
+            <artifactId>jfreechart</artifactId>
+            <version>1.5.4</version>
         </dependency>
     </dependencies>
 </project>

@@ -1,1496 +1,190 @@
-/*
- * To change this license header, choose License Headers in Project Properties.
- * To change this template file, choose Tools | Templates
- * and open the template in the editor.
- */
 package com.olympus.system.hawkdeskpos.frontend;
 
-import com.olympus.system.hawkdeskpos.db.dao.Brands;
-import com.olympus.system.hawkdeskpos.db.dao.Category;
-import com.olympus.system.hawkdeskpos.db.dao.Grninfo;
-import com.olympus.system.hawkdeskpos.db.dao.Invoiceinfo;
-import com.olympus.system.hawkdeskpos.db.dao.Item;
-import com.olympus.system.hawkdeskpos.db.dao.Stock;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
-import com.olympus.system.hawkdeskpos.frontend.finance.GrnInfo;
-import com.olympus.system.hawkdeskpos.frontend.finance.GrnItems;
-import com.olympus.system.hawkdeskpos.frontend.sale.Invoice;
-import com.olympus.system.hawkdeskpos.frontend.sale.InvoiceDetails;
-import com.olympus.system.hawkdeskpos.frontend.sale.ViewSales;
-import com.olympus.system.hawkdeskpos.frontend.stock.AddNewItem;
-import com.olympus.system.hawkdeskpos.frontend.stock.AddStock;
-import com.olympus.system.hawkdeskpos.frontend.stock.ViewCategory;
-import com.olympus.system.hawkdeskpos.frontend.stock.ViewItems;
-import com.olympus.system.hawkdeskpos.frontend.stock.ViewStock;
-import com.olympus.system.hawkdeskpos.util.Configs;
-import java.awt.Graphics;
-import java.awt.Image;
-import java.awt.Toolkit;
-import java.beans.PropertyVetoException;
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.FileReader;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.sql.Connection;
-import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Vector;
-import java.util.logging.Level;
-import java.util.logging.Logger;
-import javax.swing.ImageIcon;
-import javax.swing.JOptionPane;
-import net.sf.jasperreports.engine.JRException;
-import net.sf.jasperreports.engine.JasperCompileManager;
-import net.sf.jasperreports.engine.JasperFillManager;
-import net.sf.jasperreports.engine.JasperPrint;
-import net.sf.jasperreports.engine.JasperReport;
-import net.sf.jasperreports.view.JasperViewer;
-import org.hibernate.Session;
+import com.olympus.system.hawkdeskpos.frontend.admin.*;
+import com.olympus.system.hawkdeskpos.frontend.components.NavBar;
+import com.olympus.system.hawkdeskpos.frontend.finance.GrnHistoryPanel;
+import com.olympus.system.hawkdeskpos.frontend.reports.ReportsPanel;
+import com.olympus.system.hawkdeskpos.frontend.sale.*;
+import com.olympus.system.hawkdeskpos.frontend.stock.*;
+import com.olympus.system.hawkdeskpos.service.*;
+import com.olympus.system.hawkdeskpos.session.SessionContext;
 import org.hibernate.SessionFactory;
-import org.hibernate.Transaction;
-import jakarta.persistence.criteria.CriteriaBuilder;
-import jakarta.persistence.criteria.CriteriaQuery;
-import jakarta.persistence.criteria.Root;
+
+import javax.swing.*;
+import java.awt.*;
 
 /**
+ * Main application window — undecorated, always maximised, CardLayout host.
  *
- * @author Thusitha
+ * Backward-compat shims (other compiled classes reference these fields):
+ *   public static JDesktopPane HomeDeskpane  (kept empty — do not add to it)
+ *   public static JList<String> lstNotifi    (updated by DashboardPanel)
  */
-public class Home extends javax.swing.JFrame {
+public class Home extends JFrame {
 
-    // Hibernate 6: hold only the SessionFactory; open short-lived sessions per operation
-    private static final SessionFactory sf = Controller.getSessionFactory();
+    // ── Card names ────────────────────────────────────────────────────────────
+    public static final String CARD_LOGIN     = "LOGIN";
+    public static final String CARD_DASH      = "DASHBOARD";
+    public static final String CARD_SALE      = "NEW_SALE";
+    public static final String CARD_STOCK     = "VIEW_STOCK";
+    public static final String CARD_ADD_ITEM  = "ADD_ITEM";
+    public static final String CARD_EDIT_ITEM = "EDIT_ITEM";
+    public static final String CARD_RECEIVE   = "RECEIVE_STOCK";
+    public static final String CARD_LOW_STOCK = "LOW_STOCK";
+    public static final String CARD_HIST      = "SALES_HISTORY";
+    public static final String CARD_FIND_INV  = "FIND_INVOICE";
+    public static final String CARD_RETURNS   = "GOODS_RETURN";
+    public static final String CARD_ADJUST    = "STOCK_ADJUSTMENT";
+    public static final String CARD_REPORTS   = "REPORTS";
+    public static final String CARD_CATS      = "CATEGORIES";
+    public static final String CARD_USERS     = "USER_MGMT";
+    public static final String CARD_SETTINGS  = "SETTINGS";
+    public static final String CARD_BACKUP    = "BACKUP";
+    public static final String CARD_GRN_HIST  = "GRN_HISTORY";
+
+    // ── Backward-compat shims (referenced by old compiled classes) ────────────
+    /** @deprecated No longer used; kept for compile compatibility only. */
+    @Deprecated
+    public static final JDesktopPane HomeDeskpane = new JDesktopPane();
+
+    /** Updated by DashboardPanel with low-stock item names. */
+    public static JList<String> lstNotifi = new JList<>();
+
+    /** @deprecated No-op shim for legacy panels; kept for compile compatibility only. */
+    @Deprecated
+    public static void setNotifications() {}
+
+    // ── Singleton ─────────────────────────────────────────────────────────────
+    private static Home instance;
+
+    // ── Core layout ───────────────────────────────────────────────────────────
+    private final CardLayout cardLayout = new CardLayout();
+    private final JPanel     cardHost   = new JPanel(cardLayout);
+    private final JPanel     rootPanel  = new JPanel(new BorderLayout());
+
+    // ── Services ──────────────────────────────────────────────────────────────
+    private final SessionFactory  sf;
+    private final AuditService    auditService;
+    private final AuthService     authService;
+    private final ItemService     itemService;
+    private final SaleService     saleService;
+    private final StockService    stockService;
+    private final CategoryService categoryService;
+    private final UserService     userService;
+    private final ReturnService   returnService;
+    private final ReportService   reportService;
+    private final BackupService   backupService;
+    private final SettingsService settingsService;
+
+    private NavBar navBar;
 
     public Home() {
-        initComponents();
-        this.setExtendedState(MAXIMIZED_BOTH);
-        setTimer();
-        setDate();
-        ImageIcon i = new ImageIcon(Toolkit.getDefaultToolkit().getImage(getClass().getResource("/images/icons/Pharmacy-icon 128x128.png")));
-        setIconImage(i.getImage());
-//        jSCAnalogClock1.setUI(darkSteelAnalogClockUI1);
-        readNotes();
-        setNotifications();
-        createConfig();
-        setTitle("Service Center");
+        instance = this;
 
-    }
+        sf              = Controller.getSessionFactory();
+        auditService    = new AuditService(sf);
+        authService     = new AuthService(sf, auditService);
+        itemService     = new ItemService(sf, auditService);
+        saleService     = new SaleService(sf, auditService);
+        stockService    = new StockService(sf, auditService);
+        categoryService = new CategoryService(sf, auditService);
+        userService     = new UserService(sf, auditService);
+        returnService   = new ReturnService(sf, auditService);
+        reportService   = new ReportService(sf);
+        settingsService = new SettingsService(sf);
+        backupService   = new BackupService(sf, settingsService);
 
-    /**
-     * This method is called from within the constructor to initialize the form.
-     * WARNING: Do NOT modify this code. The content of this method is always
-     * regenerated by the Form Editor.
-     */
-    @SuppressWarnings("unchecked")
-    // <editor-fold defaultstate="collapsed" desc="Generated Code">//GEN-BEGIN:initComponents
-    private void initComponents() {
-
-        jMenuItem2 = new javax.swing.JMenuItem();
-        jMenuItem17 = new javax.swing.JMenuItem();
-        jMenuItem22 = new javax.swing.JMenuItem();
-        HomeDeskpane = new javax.swing.JDesktopPane(){
-            private Image image;{
-                try{
-                    ImageIcon ii = new ImageIcon(getClass().getResource("/images/back2.png"));
-                    image = ii.getImage();
-                }catch(Exception e){
-
-                }
-            }
-            @Override
-            protected void paintComponent(Graphics graphcs){
-                super.paintComponent(graphcs);
-                graphcs.drawImage(image,0,0,getWidth(), getHeight(), this);
-            }
-
-        };
-        jSeparator2 = new javax.swing.JSeparator();
-        jPanel1 = new javax.swing.JPanel(){
-
-            private Image image;{
-                try{
-                    ImageIcon ii = new ImageIcon(getClass().getResource("/images/back2.png"));
-                    image = ii.getImage();
-                }catch(Exception e){
-
-                }
-            }
-            @Override
-            protected void paintComponent(Graphics graphcs){
-                super.paintComponent(graphcs);
-                graphcs.drawImage(image,0,0,getWidth(), getHeight(), this);
-            }
-        };
-        jScrollPane1 = new javax.swing.JScrollPane();
-        lstNotifi = new javax.swing.JList();
-        jLabel1 = new javax.swing.JLabel();
-        btnRefresh = new javax.swing.JButton();
-        jPanel2 = new javax.swing.JPanel(){
-
-            private Image image;{
-                try{
-                    ImageIcon ii = new ImageIcon(getClass().getResource("/images/back2.png"));
-                    image = ii.getImage();
-                }catch(Exception e){
-
-                }
-            }
-            @Override
-            protected void paintComponent(Graphics graphcs){
-                super.paintComponent(graphcs);
-                graphcs.drawImage(image,0,0,getWidth(), getHeight(), this);
-            }
-        };
-        jLabel2 = new javax.swing.JLabel();
-        jScrollPane2 = new javax.swing.JScrollPane();
-        jTextArea1 = new javax.swing.JTextArea();
-        btnSaveNotes = new javax.swing.JButton();
-        jButtonBar1 = new com.l2fprod.common.swing.JButtonBar(){
-
-            private Image image;{
-                try{
-                    ImageIcon ii = new ImageIcon(getClass().getResource("/images/back.png"));
-                    image = ii.getImage();
-                }catch(Exception e){
-
-                }
-            }
-            @Override
-            protected void paintComponent(Graphics graphcs){
-                super.paintComponent(graphcs);
-                graphcs.drawImage(image,0,0,getWidth(), getHeight(), this);
-            }
-        };
-        menuAddItem = new javax.swing.JButton();
-        menuViewItm = new javax.swing.JButton();
-        btnAddCat = new javax.swing.JButton();
-        btnViewCat = new javax.swing.JButton();
-        jSeparator1 = new javax.swing.JSeparator();
-        btnNewStock = new javax.swing.JButton();
-        jButton2 = new javax.swing.JButton();
-        jSeparator3 = new javax.swing.JSeparator();
-        jButton1 = new javax.swing.JButton();
-        btnViewSales = new javax.swing.JButton();
-        jSeparator4 = new javax.swing.JSeparator();
-        jMenuBar1 = new javax.swing.JMenuBar();
-        jMenu1 = new javax.swing.JMenu();
-        jMenuItem1 = new javax.swing.JMenuItem();
-        menuExit = new javax.swing.JMenuItem();
-        jMenu3 = new javax.swing.JMenu();
-        menuNewCategory = new javax.swing.JMenuItem();
-        menuAddBrand = new javax.swing.JMenuItem();
-        menuNewItem = new javax.swing.JMenuItem();
-        jMenuItem3 = new javax.swing.JMenuItem();
-        jMenuItem4 = new javax.swing.JMenuItem();
-        menuViewItem = new javax.swing.JMenuItem();
-        menuViewCategory = new javax.swing.JMenuItem();
-        jMenu2 = new javax.swing.JMenu();
-        menuMakeSale = new javax.swing.JMenuItem();
-        menuViewInvoices = new javax.swing.JMenuItem();
-        menusearchInvoice = new javax.swing.JMenuItem();
-        jMenu4 = new javax.swing.JMenu();
-        jMenuItem9 = new javax.swing.JMenuItem();
-        jMenuItem10 = new javax.swing.JMenuItem();
-        jMenu5 = new javax.swing.JMenu();
-        reportCenterMenuItem = new javax.swing.JMenuItem();
-        jMenu6 = new javax.swing.JMenu();
-        allStock = new javax.swing.JMenuItem();
-        itemsByCategory = new javax.swing.JMenuItem();
-        todayStock = new javax.swing.JMenuItem();
-        durationStock = new javax.swing.JMenuItem();
-        availableStockByCat = new javax.swing.JMenuItem();
-        minStock = new javax.swing.JMenuItem();
-        jSeparator5 = new javax.swing.JPopupMenu.Separator();
-        jMenuItem6 = new javax.swing.JMenuItem();
-        jMenuItem11 = new javax.swing.JMenuItem();
-        jMenu7 = new javax.swing.JMenu();
-        todaySales = new javax.swing.JMenuItem();
-        allSales = new javax.swing.JMenuItem();
-        jMenuItem21 = new javax.swing.JMenuItem();
-        jMenuItem20 = new javax.swing.JMenuItem();
-        jMenuItem19 = new javax.swing.JMenuItem();
-        jMenuItem18 = new javax.swing.JMenuItem();
-        jMenu8 = new javax.swing.JMenu();
-        allGrn = new javax.swing.JMenuItem();
-        todayGRN = new javax.swing.JMenuItem();
-        jMenuItem7 = new javax.swing.JMenuItem();
-
-        jMenuItem2.setText("jMenuItem2");
-
-        jMenuItem17.setText("jMenuItem17");
-
-        jMenuItem22.setText("jMenuItem22");
-
-        setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
-        setTitle("Pharmasist 1.0");
-        setMinimumSize(new java.awt.Dimension(1024, 600));
         setUndecorated(true);
-
-        HomeDeskpane.setBackground(new java.awt.Color(255, 255, 255));
-
-        lstNotifi.setFont(new java.awt.Font("Tahoma", 0, 14)); // NOI18N
-        lstNotifi.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
-        jScrollPane1.setViewportView(lstNotifi);
-
-        jLabel1.setFont(new java.awt.Font("Tahoma", 0, 18)); // NOI18N
-        jLabel1.setText("Notifications");
-
-        btnRefresh.setText("Refresh");
-        btnRefresh.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnRefreshActionPerformed(evt);
-            }
-        });
-
-        javax.swing.GroupLayout jPanel1Layout = new javax.swing.GroupLayout(jPanel1);
-        jPanel1.setLayout(jPanel1Layout);
-        jPanel1Layout.setHorizontalGroup(
-            jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(jPanel1Layout.createSequentialGroup()
-                .addContainerGap()
-                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 254, Short.MAX_VALUE)
-                    .addGroup(jPanel1Layout.createSequentialGroup()
-                        .addComponent(jLabel1)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                        .addComponent(btnRefresh)))
-                .addContainerGap())
-        );
-        jPanel1Layout.setVerticalGroup(
-            jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(javax.swing.GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup()
-                .addGap(6, 6, 6)
-                .addGroup(jPanel1Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.BASELINE)
-                    .addComponent(jLabel1)
-                    .addComponent(btnRefresh))
-                .addGap(18, 18, 18)
-                .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 397, Short.MAX_VALUE)
-                .addGap(54, 54, 54))
-        );
-
-        javax.swing.GroupLayout jPanel2Layout = new javax.swing.GroupLayout(jPanel2);
-        jPanel2.setLayout(jPanel2Layout);
-        jPanel2Layout.setHorizontalGroup(
-            jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 469, Short.MAX_VALUE)
-        );
-        jPanel2Layout.setVerticalGroup(
-            jPanel2Layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGap(0, 505, Short.MAX_VALUE)
-        );
-
-        jLabel2.setFont(new java.awt.Font("Tahoma", 0, 14)); // NOI18N
-        jLabel2.setText("Quick Notes");
-
-        jTextArea1.setColumns(20);
-        jTextArea1.setRows(5);
-        jScrollPane2.setViewportView(jTextArea1);
-
-        btnSaveNotes.setFont(new java.awt.Font("Tahoma", 0, 14)); // NOI18N
-        btnSaveNotes.setText("Save");
-        btnSaveNotes.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnSaveNotesActionPerformed(evt);
-            }
-        });
-
-        HomeDeskpane.setLayer(jSeparator2, javax.swing.JLayeredPane.DEFAULT_LAYER);
-        HomeDeskpane.setLayer(jPanel1, javax.swing.JLayeredPane.DEFAULT_LAYER);
-        HomeDeskpane.setLayer(jPanel2, javax.swing.JLayeredPane.DEFAULT_LAYER);
-        HomeDeskpane.setLayer(jLabel2, javax.swing.JLayeredPane.DEFAULT_LAYER);
-        HomeDeskpane.setLayer(jScrollPane2, javax.swing.JLayeredPane.DEFAULT_LAYER);
-        HomeDeskpane.setLayer(btnSaveNotes, javax.swing.JLayeredPane.DEFAULT_LAYER);
-
-        javax.swing.GroupLayout HomeDeskpaneLayout = new javax.swing.GroupLayout(HomeDeskpane);
-        HomeDeskpane.setLayout(HomeDeskpaneLayout);
-        HomeDeskpaneLayout.setHorizontalGroup(
-            HomeDeskpaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(HomeDeskpaneLayout.createSequentialGroup()
-                .addContainerGap()
-                .addGroup(HomeDeskpaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(HomeDeskpaneLayout.createSequentialGroup()
-                        .addComponent(jSeparator2)
-                        .addContainerGap())
-                    .addGroup(HomeDeskpaneLayout.createSequentialGroup()
-                        .addComponent(jPanel1, javax.swing.GroupLayout.PREFERRED_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(jPanel2, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addGroup(HomeDeskpaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.TRAILING)
-                            .addGroup(HomeDeskpaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING, false)
-                                .addComponent(jLabel2, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                                .addComponent(jScrollPane2, javax.swing.GroupLayout.DEFAULT_SIZE, 261, Short.MAX_VALUE))
-                            .addComponent(btnSaveNotes)))))
-        );
-        HomeDeskpaneLayout.setVerticalGroup(
-            HomeDeskpaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-            .addGroup(HomeDeskpaneLayout.createSequentialGroup()
-                .addComponent(jSeparator2, javax.swing.GroupLayout.PREFERRED_SIZE, 10, javax.swing.GroupLayout.PREFERRED_SIZE)
-                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addGroup(HomeDeskpaneLayout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addGroup(HomeDeskpaneLayout.createSequentialGroup()
-                        .addGap(13, 13, 13)
-                        .addComponent(jLabel2, javax.swing.GroupLayout.PREFERRED_SIZE, 26, javax.swing.GroupLayout.PREFERRED_SIZE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                        .addComponent(jScrollPane2, javax.swing.GroupLayout.DEFAULT_SIZE, 175, Short.MAX_VALUE)
-                        .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.UNRELATED)
-                        .addComponent(btnSaveNotes))
-                    .addComponent(jPanel1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
-                    .addComponent(jPanel2, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
-                .addGap(4, 4, 4))
-        );
-
-        getContentPane().add(HomeDeskpane, java.awt.BorderLayout.CENTER);
-
-        jButtonBar1.setBorder(null);
-
-        menuAddItem.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/stock/itemAdd 32.png"))); // NOI18N
-        menuAddItem.setText("Add Item");
-        menuAddItem.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuAddItemActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(menuAddItem);
-
-        menuViewItm.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/stock/viewItem.png"))); // NOI18N
-        menuViewItm.setText("View Items");
-        menuViewItm.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuViewItmActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(menuViewItm);
-
-        btnAddCat.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/stock/addCategory.png"))); // NOI18N
-        btnAddCat.setText("Add Category");
-        btnAddCat.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnAddCatActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(btnAddCat);
-
-        btnViewCat.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/stock/viewCategory.png"))); // NOI18N
-        btnViewCat.setText("View Category");
-        btnViewCat.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnViewCatActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(btnViewCat);
-
-        jSeparator1.setOrientation(javax.swing.SwingConstants.VERTICAL);
-        jButtonBar1.add(jSeparator1);
-
-        btnNewStock.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/stock/addStock 32.png"))); // NOI18N
-        btnNewStock.setText("New Stock");
-        btnNewStock.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnNewStockActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(btnNewStock);
-
-        jButton2.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/stock/viewStock 32.png"))); // NOI18N
-        jButton2.setText("View Stock");
-        jButton2.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jButton2ActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(jButton2);
-
-        jSeparator3.setOrientation(javax.swing.SwingConstants.VERTICAL);
-        jButtonBar1.add(jSeparator3);
-
-        jButton1.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/sales/makeSale 32.png"))); // NOI18N
-        jButton1.setText("Make a sale");
-        jButton1.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jButton1ActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(jButton1);
-
-        btnViewSales.setIcon(new javax.swing.ImageIcon(getClass().getResource("/images/sales/viewSale 32.png"))); // NOI18N
-        btnViewSales.setText("View Sales");
-        btnViewSales.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                btnViewSalesActionPerformed(evt);
-            }
-        });
-        jButtonBar1.add(btnViewSales);
-
-        jSeparator4.setOrientation(javax.swing.SwingConstants.VERTICAL);
-        jButtonBar1.add(jSeparator4);
-
-        getContentPane().add(jButtonBar1, java.awt.BorderLayout.PAGE_START);
-
-        jMenuBar1.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        jMenu1.setText("File");
-        jMenu1.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        jMenuItem1.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem1.setText("Backups");
-        jMenuItem1.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem1ActionPerformed(evt);
-            }
-        });
-        jMenu1.add(jMenuItem1);
-
-        menuExit.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, java.awt.event.InputEvent.ALT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        menuExit.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuExit.setText("Exit");
-        menuExit.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuExitActionPerformed(evt);
-            }
-        });
-        jMenu1.add(menuExit);
-
-        jMenuBar1.add(jMenu1);
-
-        jMenu3.setText("Stock");
-        jMenu3.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        menuNewCategory.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_C, java.awt.event.InputEvent.ALT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        menuNewCategory.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuNewCategory.setText("Add Category");
-        menuNewCategory.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuNewCategoryActionPerformed(evt);
-            }
-        });
-        jMenu3.add(menuNewCategory);
-
-        menuAddBrand.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_B, java.awt.event.InputEvent.ALT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        menuAddBrand.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuAddBrand.setText("Add Brand");
-        menuAddBrand.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuAddBrandActionPerformed(evt);
-            }
-        });
-        jMenu3.add(menuAddBrand);
-
-        menuNewItem.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_I, java.awt.event.InputEvent.ALT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        menuNewItem.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuNewItem.setText("Add Item");
-        menuNewItem.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuNewItemActionPerformed(evt);
-            }
-        });
-        jMenu3.add(menuNewItem);
-
-        jMenuItem3.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_S, java.awt.event.InputEvent.ALT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        jMenuItem3.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem3.setText("Add Stock");
-        jMenuItem3.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem3ActionPerformed(evt);
-            }
-        });
-        jMenu3.add(jMenuItem3);
-
-        jMenuItem4.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_S, java.awt.event.InputEvent.SHIFT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        jMenuItem4.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem4.setText("View Stock");
-        jMenuItem4.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem4ActionPerformed(evt);
-            }
-        });
-        jMenu3.add(jMenuItem4);
-
-        menuViewItem.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_I, java.awt.event.InputEvent.SHIFT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        menuViewItem.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuViewItem.setText("View Items");
-        menuViewItem.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuViewItemActionPerformed(evt);
-            }
-        });
-        jMenu3.add(menuViewItem);
-
-        menuViewCategory.setAccelerator(javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_C, java.awt.event.InputEvent.SHIFT_DOWN_MASK | java.awt.event.InputEvent.CTRL_DOWN_MASK));
-        menuViewCategory.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuViewCategory.setText("View Category");
-        menuViewCategory.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuViewCategoryActionPerformed(evt);
-            }
-        });
-        jMenu3.add(menuViewCategory);
-
-        jMenuBar1.add(jMenu3);
-
-        jMenu2.setText("Sales");
-        jMenu2.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        menuMakeSale.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuMakeSale.setText("Make a Sales");
-        menuMakeSale.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuMakeSaleActionPerformed(evt);
-            }
-        });
-        jMenu2.add(menuMakeSale);
-
-        menuViewInvoices.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menuViewInvoices.setText("Sales History");
-        menuViewInvoices.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menuViewInvoicesActionPerformed(evt);
-            }
-        });
-        jMenu2.add(menuViewInvoices);
-
-        menusearchInvoice.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        menusearchInvoice.setText("Search Invoice");
-        menusearchInvoice.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                menusearchInvoiceActionPerformed(evt);
-            }
-        });
-        jMenu2.add(menusearchInvoice);
-
-        jMenuBar1.add(jMenu2);
-
-        jMenu4.setText("Finance");
-        jMenu4.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        jMenuItem9.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem9.setText("GRN History");
-        jMenuItem9.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem9ActionPerformed(evt);
-            }
-        });
-        jMenu4.add(jMenuItem9);
-
-        jMenuItem10.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem10.setText("GRN Details");
-        jMenuItem10.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem10ActionPerformed(evt);
-            }
-        });
-        jMenu4.add(jMenuItem10);
-
-        jMenuBar1.add(jMenu4);
-
-        jMenu5.setText("Reports");
-        jMenu5.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        reportCenterMenuItem.setText("Report Center");
-        reportCenterMenuItem.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                reportCenterMenuItemActionPerformed(evt);
-            }
-        });
-        jMenu5.add(reportCenterMenuItem);
-
-        jMenu6.setText("Stock");
-        jMenu6.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        allStock.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        allStock.setText("All Stock Items");
-        allStock.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                allStockActionPerformed(evt);
-            }
-        });
-        jMenu6.add(allStock);
-
-        itemsByCategory.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        itemsByCategory.setText("Items by Category");
-        itemsByCategory.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                itemsByCategoryActionPerformed(evt);
-            }
-        });
-        jMenu6.add(itemsByCategory);
-
-        todayStock.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        todayStock.setText("Today Stock");
-        todayStock.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                todayStockActionPerformed(evt);
-            }
-        });
-        jMenu6.add(todayStock);
-
-        durationStock.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        durationStock.setText("Duration Stock");
-        durationStock.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                durationStockActionPerformed(evt);
-            }
-        });
-        jMenu6.add(durationStock);
-
-        availableStockByCat.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        availableStockByCat.setText("Available Stock by category");
-        availableStockByCat.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                availableStockByCatActionPerformed(evt);
-            }
-        });
-        jMenu6.add(availableStockByCat);
-
-        minStock.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        minStock.setText("Minimum Stock Items");
-        minStock.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                minStockActionPerformed(evt);
-            }
-        });
-        jMenu6.add(minStock);
-        jMenu6.add(jSeparator5);
-
-        jMenuItem6.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem6.setText("Active Category List");
-        jMenuItem6.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem6ActionPerformed(evt);
-            }
-        });
-        jMenu6.add(jMenuItem6);
-
-        jMenuItem11.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem11.setText("De-active Category List");
-        jMenuItem11.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem11ActionPerformed(evt);
-            }
-        });
-        jMenu6.add(jMenuItem11);
-
-        jMenu5.add(jMenu6);
-
-        jMenu7.setText("Sales");
-        jMenu7.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        todaySales.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        todaySales.setText("Day Report");
-        todaySales.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                todaySalesActionPerformed(evt);
-            }
-        });
-        jMenu7.add(todaySales);
-
-        allSales.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        allSales.setText("Sales Report");
-        allSales.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                allSalesActionPerformed(evt);
-            }
-        });
-        jMenu7.add(allSales);
-
-        jMenuItem21.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem21.setText("Duration Report");
-        jMenuItem21.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem21ActionPerformed(evt);
-            }
-        });
-        jMenu7.add(jMenuItem21);
-
-        jMenuItem20.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem20.setText("Sales by Invoice");
-        jMenuItem20.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem20ActionPerformed(evt);
-            }
-        });
-        jMenu7.add(jMenuItem20);
-
-        jMenuItem19.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem19.setText("Sold Items");
-        jMenuItem19.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem19ActionPerformed(evt);
-            }
-        });
-        jMenu7.add(jMenuItem19);
-
-        jMenuItem18.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem18.setText("Sold items in Duration");
-        jMenuItem18.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem18ActionPerformed(evt);
-            }
-        });
-        jMenu7.add(jMenuItem18);
-
-        jMenu5.add(jMenu7);
-
-        jMenu8.setText("Finance");
-        jMenu8.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-
-        allGrn.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        allGrn.setText("All GRN");
-        allGrn.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                allGrnActionPerformed(evt);
-            }
-        });
-        jMenu8.add(allGrn);
-
-        todayGRN.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        todayGRN.setText("Today GRNs");
-        todayGRN.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                todayGRNActionPerformed(evt);
-            }
-        });
-        jMenu8.add(todayGRN);
-
-        jMenuItem7.setFont(new java.awt.Font("Segoe UI", 0, 14)); // NOI18N
-        jMenuItem7.setText("GRN of Duration");
-        jMenuItem7.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jMenuItem7ActionPerformed(evt);
-            }
-        });
-        jMenu8.add(jMenuItem7);
-
-        jMenu5.add(jMenu8);
-
-        jMenuBar1.add(jMenu5);
-
-        setJMenuBar(jMenuBar1);
-
-        pack();
-    }// </editor-fold>//GEN-END:initComponents
-
-    private void menuNewCategoryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuNewCategoryActionPerformed
-
-        String name = JOptionPane.showInputDialog(this, "Please enter the category name");
-        if (name != null && !name.trim().isEmpty()) {
-            try (Session session = sf.openSession()) {
-                Transaction trans = session.beginTransaction();
-                Category cat = new Category();
-                cat.setCategoryName(name);
-                cat.setStat("active");
-                session.persist(cat);
-                trans.commit();
-                JOptionPane.showMessageDialog(this, "Category Saved");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        System.gc();
-
-    }//GEN-LAST:event_menuNewCategoryActionPerformed
-
-    private void menuNewItemActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuNewItemActionPerformed
-
-        AddNewItem newItem = new AddNewItem();
-        HomeDeskpane.add(newItem);
-        newItem.setVisible(true);
-        newItem.setLocation(this.getWidth() / 4, this.getHeight() / 10);
-        System.gc();
-    }//GEN-LAST:event_menuNewItemActionPerformed
-
-    private void jMenuItem3ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem3ActionPerformed
-
-        AddStock stock = new AddStock();
-        HomeDeskpane.add(stock);
-        stock.setVisible(true);
-        try {
-            stock.setMaximum(true);
-        } catch (PropertyVetoException ex) {
-            Logger.getLogger(Home.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }//GEN-LAST:event_jMenuItem3ActionPerformed
-
-    private void btnNewStockActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnNewStockActionPerformed
-
-        AddStock stock = new AddStock();
-        HomeDeskpane.add(stock);
-        stock.setVisible(true);
-        try {
-            stock.setMaximum(true);
-        } catch (PropertyVetoException ex) {
-            Logger.getLogger(Home.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }//GEN-LAST:event_btnNewStockActionPerformed
-
-    private void jButton1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton1ActionPerformed
-
-        Invoice invoice = new Invoice();
-        HomeDeskpane.add(invoice);
-        invoice.setVisible(true);
-        try {
-            invoice.setMaximum(true);
-        } catch (PropertyVetoException e) {
-            e.printStackTrace();
-        }
-    }//GEN-LAST:event_jButton1ActionPerformed
-
-    private void jButton2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButton2ActionPerformed
-
-        ViewStock view = new ViewStock();
-        HomeDeskpane.add(view);
-        view.setVisible(true);
-        try {
-            view.setMaximum(true);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }//GEN-LAST:event_jButton2ActionPerformed
-
-    private void jMenuItem4ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem4ActionPerformed
-
-        ViewStock view = new ViewStock();
-        HomeDeskpane.add(view);
-        view.setVisible(true);
-        try {
-            view.setMaximum(true);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }//GEN-LAST:event_jMenuItem4ActionPerformed
-
-    private void menuViewCategoryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuViewCategoryActionPerformed
-
-        ViewCategory viewCat = new ViewCategory();
-        HomeDeskpane.add(viewCat);
-        viewCat.setVisible(true);
-    }//GEN-LAST:event_menuViewCategoryActionPerformed
-
-    private void menuAddBrandActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuAddBrandActionPerformed
-
-        String name = JOptionPane.showInputDialog(this, "Please enter the brand name");
-        if (name != null && !name.trim().isEmpty()) {
-            try (Session session = sf.openSession()) {
-                Transaction trans = session.beginTransaction();
-                Brands brand = new Brands();
-                brand.setBrandName(name);
-                session.persist(brand);
-                trans.commit();
-                JOptionPane.showMessageDialog(this, "Brand name saved");
-            } catch (Exception e) {
-                e.printStackTrace();
-            }
-        }
-        System.gc();
-    }//GEN-LAST:event_menuAddBrandActionPerformed
-
-    private void menuViewItemActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuViewItemActionPerformed
-
-        ViewItems item = new ViewItems();
-        HomeDeskpane.add(item);
-        item.setVisible(true);
-        try {
-            item.setMaximum(true);
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-    }//GEN-LAST:event_menuViewItemActionPerformed
-
-    private void menuViewInvoicesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuViewInvoicesActionPerformed
-
-        ViewSales sales = new ViewSales();
-        Home.HomeDeskpane.add(sales);
-        sales.setVisible(true);
-        try {
-            sales.setMaximum(true);
-        } catch (Exception e) {
-        }
-    }//GEN-LAST:event_menuViewInvoicesActionPerformed
-
-    private void menuMakeSaleActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuMakeSaleActionPerformed
-
-        Invoice invoice = new Invoice();
-        Home.HomeDeskpane.add(invoice);
-        invoice.setVisible(true);
-        try {
-            invoice.setMaximum(true);
-        } catch (Exception e) {
-        }
-    }//GEN-LAST:event_menuMakeSaleActionPerformed
-
-    private void menuAddItemActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuAddItemActionPerformed
-
-        AddNewItem item = new AddNewItem();
-        Home.HomeDeskpane.add(item);
-        item.setVisible(true);
-    }//GEN-LAST:event_menuAddItemActionPerformed
-
-    private void menuViewItmActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuViewItmActionPerformed
-
-        ViewItems view = new ViewItems();
-        Home.HomeDeskpane.add(view);
-        view.setVisible(true);
-        try {
-            view.setMaximum(true);
-        } catch (Exception e) {
-        }
-    }//GEN-LAST:event_menuViewItmActionPerformed
-
-    private void btnViewSalesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnViewSalesActionPerformed
-
-        ViewSales sales = new ViewSales();
-        Home.HomeDeskpane.add(sales);
-        sales.setVisible(true);
-        try {
-            sales.setMaximum(true);
-        } catch (Exception e) {
-        }
-    }//GEN-LAST:event_btnViewSalesActionPerformed
-
-    private void btnAddCatActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnAddCatActionPerformed
-
-        new com.olympus.system.hawkdeskpos.frontend.model.Category().addCategory();
-    }//GEN-LAST:event_btnAddCatActionPerformed
-
-    private void btnViewCatActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnViewCatActionPerformed
-
-        ViewCategory viewCat = new ViewCategory();
-        Home.HomeDeskpane.add(viewCat);
-        viewCat.setVisible(true);
-
-    }//GEN-LAST:event_btnViewCatActionPerformed
-
-    private void btnSaveNotesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnSaveNotesActionPerformed
-        try {
-            FileWriter writer = new FileWriter("notes.txt");
-            writer.write(jTextArea1.getText());
-            writer.flush();
-            writer.close();
-            JOptionPane.showMessageDialog(this, "Note saved");
-        } catch (IOException ex) {
-            Logger.getLogger(Home.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }//GEN-LAST:event_btnSaveNotesActionPerformed
-
-    private void menuExitActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menuExitActionPerformed
-
-        System.exit(0);
-    }//GEN-LAST:event_menuExitActionPerformed
-
-    private void jMenuItem9ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem9ActionPerformed
-
-        GrnInfo info = new GrnInfo();
-        Home.HomeDeskpane.add(info);
-        info.setVisible(true);
-        try {
-            info.setMaximum(true);
-        } catch (Exception e) {
-        }
-    }//GEN-LAST:event_jMenuItem9ActionPerformed
-
-    private void jMenuItem10ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem10ActionPerformed
-
-        try {
-            int grnNo = Integer.parseInt(JOptionPane.showInputDialog(this, "Please enter the GRN No"));
-
-            try (Session session = sf.openSession()) {
-                CriteriaBuilder cb = session.getCriteriaBuilder();
-                CriteriaQuery<Grninfo> cq = cb.createQuery(Grninfo.class);
-                Root<Grninfo> root = cq.from(Grninfo.class);
-                cq.where(cb.equal(root.get("grnNo"), grnNo));
-                Grninfo info = session.createQuery(cq).uniqueResult();
-
-                if (info == null) {
-                    JOptionPane.showMessageDialog(this, "Cannot find GRN no. Please check again");
-                    return;
-                }
-
-                GrnItems item = new GrnItems(info);
-                Home.HomeDeskpane.add(item);
-                item.setVisible(true);
-                item.setMaximum(true);
-            }
-
-        } catch (NumberFormatException F) {
-            JOptionPane.showMessageDialog(this, "GRN number cannot be empty");
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-    }//GEN-LAST:event_jMenuItem10ActionPerformed
-
-    private void jMenuItem6ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem6ActionPerformed
-
-        categoryReport("active", "Active Categories Report");
-        System.gc();
-    }//GEN-LAST:event_jMenuItem6ActionPerformed
-
-    private void jMenuItem11ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem11ActionPerformed
-
-        categoryReport("deactive", "De-active Categories Report");
-        System.gc();
-    }//GEN-LAST:event_jMenuItem11ActionPerformed
-
-    private void todaySalesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_todaySalesActionPerformed
-
-        String path = "src\\Reports\\daySalesReport.jrxml";
-        Map<String, Object> params = new HashMap<>();
-        params.put("startDate", new Date(System.currentTimeMillis()));
-        params.put("endDate", new Date(System.currentTimeMillis()));
-        generateReport(path, params);
-        System.gc();
-    }//GEN-LAST:event_todaySalesActionPerformed
-
-    private void allStockActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_allStockActionPerformed
-
-        new Thread(new Runnable() {
-
-            @Override
-            public void run() {
-                try {
-                    loading l = new loading();
-                    l.setVisible(true);
-                    JasperReport jasperReport = JasperCompileManager.compileReport("src\\Reports\\stockItems.jrxml");
-                    Connection cn = new Conn().con();
-//                    JRProperties.setProperty("net.sf.jasperreports.xpath.executer.factory", "net.sf.jasperreports.engine.util.xml.JaxenXPathExecuterFactory");
-                    Map<String, Object> map = new HashMap<String, Object>();
-                    JasperPrint print = JasperFillManager.fillReport(jasperReport, map, cn);
-                    l.setVisible(false);
-                    JasperViewer.viewReport(print, false);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }).start();
-        System.gc();
-        System.gc();
-    }//GEN-LAST:event_allStockActionPerformed
-
-    private void itemsByCategoryActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_itemsByCategoryActionPerformed
-
-        new Thread(new Runnable() {
-
-            @Override
-            public void run() {
-                try {
-                    loading l = new loading();
-                    l.setVisible(true);
-
-                    Connection c = new Conn().con();
-                    String url = "src\\Reports\\stockByCat.jrxml";
-//                    JRProperties.setProperty("net.sf.jasperreports.xpath.executer.factory", "net.sf.jasperreports.engine.util.xml.JaxenXPathExecuterFactory");
-                    Map<String, Object> map = new HashMap<String, Object>();
-                    JasperReport jasperReport = JasperCompileManager.compileReport(url);
-                    JasperPrint print = JasperFillManager.fillReport(jasperReport, map, c);
-                    l.setVisible(false);
-                    JasperViewer.viewReport(print, false);
-
-                } catch (JRException ex) {
-                    ex.printStackTrace();
-                } catch (Exception ex) {
-                    Logger.getLogger(Home.class.getName()).log(Level.SEVERE, null, ex);
-                }
-
-            }
-        }).start();
-        System.gc();
-    }//GEN-LAST:event_itemsByCategoryActionPerformed
-
-    private void todayStockActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_todayStockActionPerformed
-
-        new Thread(new Runnable() {
-
-            @Override
-            public void run() {
-                try {
-                    loading l = new loading();
-                    l.setVisible(true);
-                    String path = "src\\Reports\\dayStock.jrxml";
-                    Map<String, Object> params = new HashMap<>();
-                    params.put("startDate", new Date(System.currentTimeMillis()));
-                    params.put("endDate", new Date(System.currentTimeMillis()));
-                    JasperReport jasper = JasperCompileManager.compileReport(path);
-                    Connection c = new Conn().con();
-                    JasperPrint print = JasperFillManager.fillReport(jasper, params, c);
-                    l.setVisible(false);
-                    JasperViewer.viewReport(print, false);
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }).start();
-        System.gc();
-    }//GEN-LAST:event_todayStockActionPerformed
-
-    private void durationStockActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_durationStockActionPerformed
-
-        String path = "src\\Reports\\daySaleReport.jrxml";
-        loading l = new loading(path);
-        l.setVisible(true);
-        System.gc();
-    }//GEN-LAST:event_durationStockActionPerformed
-
-    private void allSalesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_allSalesActionPerformed
-
-        String path = "src\\Reports\\AllSales.jrxml";
-        Map<String, Object> map = new HashMap<>();
-        generateReport(path, map);
-
-    }//GEN-LAST:event_allSalesActionPerformed
-
-    private void jMenuItem20ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem20ActionPerformed
-
-        String path = "src\\Reports\\salesByInvoice.jrxml";
-        Map<String, Object> map = new HashMap<>();
-        generateReport(path, map);
-    }//GEN-LAST:event_jMenuItem20ActionPerformed
-
-    private void availableStockByCatActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_availableStockByCatActionPerformed
-
-        String path = "src\\Reports\\StockByCat.jrxml";
-        Map<String, Object> map = new HashMap<>();
-        generateReport(path, map);
-    }//GEN-LAST:event_availableStockByCatActionPerformed
-
-    private void jMenuItem21ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem21ActionPerformed
-
-        String path = "src\\Reports\\daySalesReport.jrxml";
-        loading l = new loading(path);
-        l.setVisible(true);
-        System.gc();
-    }//GEN-LAST:event_jMenuItem21ActionPerformed
-
-    private void jMenuItem19ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem19ActionPerformed
-
-        String path = "src\\Reports\\SalesByItem.jrxml";
-        Map<String, Object> map = new HashMap<>();
-        generateReport(path, map);
-    }//GEN-LAST:event_jMenuItem19ActionPerformed
-
-    private void jMenuItem18ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem18ActionPerformed
-
-        String path = "src\\Reports\\salesByItemAndDate.jrxml";
-        loading l = new loading(path);
-        l.setVisible(true);
-    }//GEN-LAST:event_jMenuItem18ActionPerformed
-
-    private void allGrnActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_allGrnActionPerformed
-
-        String path = "src\\Reports\\grnAll.jrxml";
-        Map<String, Object> map = new HashMap<>();
-        generateReport(path, map);
-    }//GEN-LAST:event_allGrnActionPerformed
-
-    private void todayGRNActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_todayGRNActionPerformed
-
-        String path = "src\\Reports\\DayGRN.jrxml";
-        Map<String, Object> map = new HashMap<>();
-        map.put("startDate", new Date(System.currentTimeMillis()));
-        map.put("endDate", new Date(System.currentTimeMillis()));
-        generateReport(path, map);
-    }//GEN-LAST:event_todayGRNActionPerformed
-
-    private void jMenuItem7ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem7ActionPerformed
-
-        String path = "src\\Reports\\DayGRN.jrxml";
-        loading l = new loading(path);
-        l.setVisible(true);
-    }//GEN-LAST:event_jMenuItem7ActionPerformed
-
-    private void minStockActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_minStockActionPerformed
-
-        String path = "src\\Reports\\minStock.jrxml";
-        Map<String, Object> map = new HashMap<>();
-        generateReport(path, map);
-    }//GEN-LAST:event_minStockActionPerformed
-
-    private void btnRefreshActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_btnRefreshActionPerformed
-
-        setNotifications();
-    }//GEN-LAST:event_btnRefreshActionPerformed
-
-    private void jMenuItem1ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem1ActionPerformed
-
-        DbBackup backup = new DbBackup();
-        Home.HomeDeskpane.add(backup);
-        backup.setVisible(true);
-    }//GEN-LAST:event_jMenuItem1ActionPerformed
-
-    Date d = new Date();
-    SimpleDateFormat sd = new SimpleDateFormat("hh-mm-ssa");
-    private void menusearchInvoiceActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_menusearchInvoiceActionPerformed
-
-        String s = JOptionPane.showInputDialog(this, "Please enter the invoice number");
-        try {
-            int invoiceNo = Integer.parseInt(s);
-            try (Session session = sf.openSession()) {
-                // session.get returns null if not found (safer than session.load)
-                Invoiceinfo invoice = session.get(Invoiceinfo.class, invoiceNo);
-                if (invoice == null) {
-                    JOptionPane.showMessageDialog(this, "Cannot find invoice");
-                    return;
-                }
-                InvoiceDetails details = new InvoiceDetails(invoice);
-                Home.HomeDeskpane.add(details);
-                details.setVisible(true);
-            }
-        } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this, "Invalid invoice number");
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Cannot find invoice");
-        }
-
-
-    }//GEN-LAST:event_menusearchInvoiceActionPerformed
-
-    private void reportCenterMenuItemActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_reportCenterMenuItemActionPerformed
-        ReportCenter reportCenter = new ReportCenter();
-        Home.HomeDeskpane.add(reportCenter);
-        reportCenter.setVisible(true);
-    }//GEN-LAST:event_reportCenterMenuItemActionPerformed
-
-    public void generateReport(final String path, final Map map) {
-
-        new Thread(new Runnable() {
-
-            @Override
-            public void run() {
-                try {
-
-                    loading l = new loading();
-                    l.setVisible(true);
-                    Connection c = new Conn().con();
-                    JasperReport report = JasperCompileManager.compileReport(path);
-                    JasperPrint print = JasperFillManager.fillReport(report, map, c);
-                    l.setVisible(false);
-                    JasperViewer.viewReport(print, false);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }).start();
+        setExtendedState(JFrame.MAXIMIZED_BOTH);
+        setMinimumSize(new Dimension(1024, 768));
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+        rootPanel.setBackground(new Color(0xF0, 0xF2, 0xF5));
+        cardHost.setBackground(new Color(0xF0, 0xF2, 0xF5));
+        rootPanel.add(cardHost, BorderLayout.CENTER);
+        setContentPane(rootPanel);
+
+        registerCards();
+        cardLayout.show(cardHost, CARD_LOGIN);
     }
 
-    /**
-     * @param args the command line arguments
-     */
-    public static void main(String args[]) {
-        /* Set the Nimbus look and feel */
-        //<editor-fold defaultstate="collapsed" desc=" Look and feel setting code (optional) ">
-        /* If Nimbus (introduced in Java SE 6) is not available, stay with the default look and feel.
-         * For details see http://download.oracle.com/javase/tutorial/uiswing/lookandfeel/plaf.html 
-         */
-        try {
-            for (javax.swing.UIManager.LookAndFeelInfo info : javax.swing.UIManager.getInstalledLookAndFeels()) {
-                if ("Nimbus".equals(info.getName())) {
-                    javax.swing.UIManager.setLookAndFeel(info.getClassName());
-                    break;
-                }
-            }
-        } catch (ClassNotFoundException ex) {
-            java.util.logging.Logger.getLogger(Home.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (InstantiationException ex) {
-            java.util.logging.Logger.getLogger(Home.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (IllegalAccessException ex) {
-            java.util.logging.Logger.getLogger(Home.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        } catch (javax.swing.UnsupportedLookAndFeelException ex) {
-            java.util.logging.Logger.getLogger(Home.class.getName()).log(java.util.logging.Level.SEVERE, null, ex);
-        }
-        //</editor-fold>
-        //</editor-fold>
-
-        /* Create and display the form */
-        java.awt.EventQueue.invokeLater(new Runnable() {
-            public void run() {
-                new Home().setVisible(true);
-            }
-        });
+    private void registerCards() {
+        cardHost.add(new LoginPanel(authService, auditService, this::onLoginSuccess), CARD_LOGIN);
+        cardHost.add(new DashboardPanel(itemService, saleService, settingsService), CARD_DASH);
+        cardHost.add(new NewSalePanel(itemService, saleService, settingsService), CARD_SALE);
+        cardHost.add(new ViewStockPanel(itemService, categoryService), CARD_STOCK);
+        cardHost.add(new AddItemPanel(itemService, categoryService), CARD_ADD_ITEM);
+        cardHost.add(new EditItemPanel(itemService, categoryService), CARD_EDIT_ITEM);
+        cardHost.add(new ReceiveStockPanel(itemService, stockService, settingsService), CARD_RECEIVE);
+        cardHost.add(new LowStockPanel(itemService, reportService), CARD_LOW_STOCK);
+        cardHost.add(new SalesHistoryPanel(saleService), CARD_HIST);
+        cardHost.add(new FindInvoicePanel(saleService), CARD_FIND_INV);
+        cardHost.add(new GoodsReturnPanel(saleService, returnService), CARD_RETURNS);
+        cardHost.add(new StockAdjustmentPanel(itemService, stockService), CARD_ADJUST);
+        cardHost.add(new ReportsPanel(reportService, settingsService), CARD_REPORTS);
+        cardHost.add(new ManageCategoriesPanel(categoryService), CARD_CATS);
+        cardHost.add(new UserManagementPanel(userService), CARD_USERS);
+        cardHost.add(new SettingsPanel(settingsService), CARD_SETTINGS);
+        cardHost.add(new BackupPanel(backupService), CARD_BACKUP);
+        cardHost.add(new GrnHistoryPanel(stockService), CARD_GRN_HIST);
     }
 
-    // Variables declaration - do not modify//GEN-BEGIN:variables
-    public static javax.swing.JDesktopPane HomeDeskpane;
-    private javax.swing.JMenuItem allGrn;
-    private javax.swing.JMenuItem allSales;
-    private javax.swing.JMenuItem allStock;
-    private javax.swing.JMenuItem availableStockByCat;
-    private javax.swing.JButton btnAddCat;
-    private javax.swing.JButton btnNewStock;
-    private javax.swing.JButton btnRefresh;
-    private javax.swing.JButton btnSaveNotes;
-    private javax.swing.JButton btnViewCat;
-    private javax.swing.JButton btnViewSales;
-    private javax.swing.JMenuItem durationStock;
-    private javax.swing.JMenuItem itemsByCategory;
-    private javax.swing.JButton jButton1;
-    private javax.swing.JButton jButton2;
-    private com.l2fprod.common.swing.JButtonBar jButtonBar1;
-    private javax.swing.JLabel jLabel1;
-    private javax.swing.JLabel jLabel2;
-    private javax.swing.JMenu jMenu1;
-    private javax.swing.JMenu jMenu2;
-    private javax.swing.JMenu jMenu3;
-    private javax.swing.JMenu jMenu4;
-    private javax.swing.JMenu jMenu5;
-    private javax.swing.JMenu jMenu6;
-    private javax.swing.JMenu jMenu7;
-    private javax.swing.JMenu jMenu8;
-    private javax.swing.JMenuBar jMenuBar1;
-    private javax.swing.JMenuItem jMenuItem1;
-    private javax.swing.JMenuItem jMenuItem10;
-    private javax.swing.JMenuItem jMenuItem11;
-    private javax.swing.JMenuItem jMenuItem17;
-    private javax.swing.JMenuItem jMenuItem18;
-    private javax.swing.JMenuItem jMenuItem19;
-    private javax.swing.JMenuItem jMenuItem2;
-    private javax.swing.JMenuItem jMenuItem20;
-    private javax.swing.JMenuItem jMenuItem21;
-    private javax.swing.JMenuItem jMenuItem22;
-    private javax.swing.JMenuItem jMenuItem3;
-    private javax.swing.JMenuItem jMenuItem4;
-    private javax.swing.JMenuItem jMenuItem6;
-    private javax.swing.JMenuItem jMenuItem7;
-    private javax.swing.JMenuItem jMenuItem9;
-    private javax.swing.JPanel jPanel1;
-    private javax.swing.JPanel jPanel2;
-    private javax.swing.JScrollPane jScrollPane1;
-    private javax.swing.JScrollPane jScrollPane2;
-    private javax.swing.JSeparator jSeparator1;
-    private javax.swing.JSeparator jSeparator2;
-    private javax.swing.JSeparator jSeparator3;
-    private javax.swing.JSeparator jSeparator4;
-    private javax.swing.JPopupMenu.Separator jSeparator5;
-    private javax.swing.JTextArea jTextArea1;
-    public static javax.swing.JList lstNotifi;
-    private javax.swing.JMenuItem menuAddBrand;
-    private javax.swing.JButton menuAddItem;
-    private javax.swing.JMenuItem menuExit;
-    private javax.swing.JMenuItem menuMakeSale;
-    private javax.swing.JMenuItem menuNewCategory;
-    private javax.swing.JMenuItem menuNewItem;
-    private javax.swing.JMenuItem menuViewCategory;
-    private javax.swing.JMenuItem menuViewInvoices;
-    private javax.swing.JMenuItem menuViewItem;
-    private javax.swing.JButton menuViewItm;
-    private javax.swing.JMenuItem menusearchInvoice;
-    private javax.swing.JMenuItem minStock;
-    private javax.swing.JMenuItem reportCenterMenuItem;
-    private javax.swing.JMenuItem todayGRN;
-    private javax.swing.JMenuItem todaySales;
-    private javax.swing.JMenuItem todayStock;
-    // End of variables declaration//GEN-END:variables
-
-    public static void setNotifications() {
-        Vector<String> v = new Vector<>();
-        v.add("-- Minimum stocks --");
-
-        try (Session session = sf.openSession()) {
-            // Fetch all active items using CriteriaBuilder
-            CriteriaBuilder cb = session.getCriteriaBuilder();
-            CriteriaQuery<Item> cq = cb.createQuery(Item.class);
-            Root<Item> root = cq.from(Item.class);
-            cq.where(cb.equal(root.get("stat"), "active"));
-            List<Item> items = session.createQuery(cq).getResultList();
-
-            for (Item item : items) {
-                try {
-                    // Use HQL aggregate to sum qty for each item
-                    Long totalQty = session.createQuery(
-                            "SELECT COALESCE(SUM(s.qty), 0L) FROM Stock s WHERE s.item = :item",
-                            Long.class)
-                            .setParameter("item", item)
-                            .uniqueResult();
-
-                    if (totalQty == null || totalQty == 0) {
-                        v.add(item.getItemName() + " (Not in stock)");
-                    } else if (totalQty <= item.getMinLevel()) {
-                        v.add(item.getItemName() + " (" + totalQty + ")");
-                    }
-                } catch (Exception e) {
-                    v.add(item.getItemName() + " (Not in stock)");
-                }
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-
-        lstNotifi.setListData(v);
-        System.gc();
+    private void onLoginSuccess() {
+        if (navBar != null) rootPanel.remove(navBar);
+        navBar = new NavBar(settingsService.shopName(), this::onLogout);
+        wireNavButtons(navBar);
+        rootPanel.add(navBar, BorderLayout.NORTH);
+        rootPanel.revalidate();
+        rootPanel.repaint();
+        navigate(CARD_DASH);
     }
 
-    private void readNotes() {
-        try {
-            FileReader read = new FileReader("notes.txt");
-            BufferedReader br = new BufferedReader(read);
-            jTextArea1.read(br, null);
-            br.close();
-            jTextArea1.requestFocus();
-
-        } catch (IOException e) {
-            jTextArea1.setText("There is no notes saved");
+    private void wireNavButtons(Container container) {
+        for (Component c : container.getComponents()) {
+            if (c instanceof NavBar.NavButton btn) {
+                btn.addActionListener(e -> navigate(btn.getCard()));
+            } else if (c instanceof Container ct) {
+                wireNavButtons(ct);
+            }
         }
     }
 
-    private void categoryReport(final String status, final String title) {
-
-        new Thread(new Runnable() {
-
-            @Override
-            public void run() {
-
-                try {
-                    loading l = new loading();
-                    l.setVisible(true);
-                    Connection cn = new Conn().con();
-//                    JRProperties.setProperty("net.sf.jasperreports.xpath.executer.factory", "net.sf.jasperreports.engine.util.xml.JaxenXPathExecuterFactory");
-                    Map<String, Object> map = new HashMap<String, Object>();
-                    map.put("status", status);
-                    map.put("title", title);
-                    JasperReport report = JasperCompileManager.compileReport("src\\Reports\\categories.jrxml");
-                    JasperPrint print = JasperFillManager.fillReport(report, map, cn);
-                    JasperViewer.viewReport(print, false);
-
-                    l.setVisible(false);
-                } catch (Exception e) {
-                }
-            }
-        }).start();
+    private void onLogout() {
+        SessionContext.logout();
+        if (navBar != null) { rootPanel.remove(navBar); navBar = null; }
+        rootPanel.revalidate();
+        rootPanel.repaint();
+        // Replace login panel with a fresh one
+        cardHost.removeAll();
+        registerCards();
+        cardHost.revalidate();
+        cardLayout.show(cardHost, CARD_LOGIN);
     }
 
-    public static void createConfig() {
-        try {
-            FileInputStream in = new FileInputStream("src\\config.cnf");
-        } catch (Exception e) {
-            Configs con = new Configs();
-            con.SaveProp("BackupOption", "Manual");
-            con.SaveProp("ManualLocation", "src\\Backups");
-            con.SaveProp("AutoBackupTime", "05\\:\\00\\:00\\ PM");
-            con.SaveProp("AutoBackupRule", "Everyday");
-            con.SaveProp("AutoBackupLocation", "src\\Backups");
+    // ── Static navigation API ─────────────────────────────────────────────────
+
+    public static void navigate(String card) {
+        if (instance != null) instance.cardLayout.show(instance.cardHost, card);
+    }
+
+    public static void navigateToEditItem(int itemId) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof EditItemPanel eip) { eip.loadItem(itemId); break; }
         }
-
+        navigate(CARD_EDIT_ITEM);
     }
 
-    private void setTimer() {
-//        new Timer(0, new ActionListener() {
-//
-//            @Override
-//            public void actionPerformed(ActionEvent e) {
-//                Date d = new Date();
-//                SimpleDateFormat df = new SimpleDateFormat("hh:mm:ss a");
-//                String time = df.format(d);
-//                lblClock.setText(time);
-//            }
-//        }).start();
-
-    }
-
-    private void setDate() {
-//        lblDate.setText(new SimpleDateFormat("yyy-MM-dd").format(new Date()));
-        System.gc();
-    }
+    // ── Accessors ─────────────────────────────────────────────────────────────
+    public static Home          get()        { return instance;       }
+    public ItemService     items()           { return itemService;     }
+    public SaleService     sales()           { return saleService;     }
+    public StockService    stock()           { return stockService;    }
+    public CategoryService categories()      { return categoryService; }
+    public UserService     users()           { return userService;     }
+    public ReturnService   returns()         { return returnService;   }
+    public ReportService   reports()         { return reportService;   }
+    public BackupService   backup()          { return backupService;   }
+    public SettingsService settings()        { return settingsService; }
 }

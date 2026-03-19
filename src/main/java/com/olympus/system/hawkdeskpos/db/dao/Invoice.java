@@ -4,11 +4,8 @@ import jakarta.persistence.*;
 import java.io.Serializable;
 import java.util.Date;
 
-/**
- * Invoice — upgraded to Hibernate 6 / Jakarta Persistence 3.x
- */
 @Entity
-@Table(name = "invoice", catalog = "pharmacy")
+@Table(name = "invoice")
 public class Invoice implements Serializable {
 
     @Id
@@ -17,113 +14,52 @@ public class Invoice implements Serializable {
     private Integer id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "stockId", nullable = false)
+    @JoinColumn(name = "stock_id")
     private Stock stock;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "itemId", nullable = false)
+    @JoinColumn(name = "item_id")
     private Item item;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "invoiceNo", nullable = false)
+    @JoinColumn(name = "invoice_no")
     private Invoiceinfo invoiceinfo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "employee_id")
+    private Employee employee;
 
     @Column(name = "batch", length = 45)
     private String batch;
 
-    @Temporal(TemporalType.DATE)
-    @Column(name = "dateTime")
+    @Temporal(TemporalType.TIMESTAMP)
+    @Column(name = "date_time")
     private Date dateTime;
 
     @Column(name = "qty")
     private Integer qty;
 
-    @Column(name = "subTotal", precision = 22, scale = 0)
+    @Column(name = "sub_total")
     private Double subTotal;
 
-    // ── Constructors ────────────────────────────────────────────────────────
-    public Invoice() {
-    }
+    public Invoice() {}
 
-    public Invoice(Stock stock, Item item, Invoiceinfo invoiceinfo) {
-        this.stock = stock;
-        this.item = item;
-        this.invoiceinfo = invoiceinfo;
-    }
-
-    public Invoice(Stock stock, Item item, Invoiceinfo invoiceinfo,
-            String batch, Date dateTime, Integer qty, Double subTotal) {
-        this.stock = stock;
-        this.item = item;
-        this.invoiceinfo = invoiceinfo;
-        this.batch = batch;
-        this.dateTime = dateTime;
-        this.qty = qty;
-        this.subTotal = subTotal;
-    }
-
-    // ── Getters & Setters ────────────────────────────────────────────────────
-    public Integer getId() {
-        return id;
-    }
-
-    public void setId(Integer id) {
-        this.id = id;
-    }
-
-    public Stock getStock() {
-        return stock;
-    }
-
-    public void setStock(Stock stock) {
-        this.stock = stock;
-    }
-
-    public Item getItem() {
-        return item;
-    }
-
-    public void setItem(Item item) {
-        this.item = item;
-    }
-
-    public Invoiceinfo getInvoiceinfo() {
-        return invoiceinfo;
-    }
-
-    public void setInvoiceinfo(Invoiceinfo invoiceinfo) {
-        this.invoiceinfo = invoiceinfo;
-    }
-
-    public String getBatch() {
-        return batch;
-    }
-
-    public void setBatch(String batch) {
-        this.batch = batch;
-    }
-
-    public Date getDateTime() {
-        return dateTime;
-    }
-
-    public void setDateTime(Date dateTime) {
-        this.dateTime = dateTime;
-    }
-
-    public Integer getQty() {
-        return qty;
-    }
-
-    public void setQty(Integer qty) {
-        this.qty = qty;
-    }
-
-    public Double getSubTotal() {
-        return subTotal;
-    }
-
-    public void setSubTotal(Double subTotal) {
-        this.subTotal = subTotal;
-    }
+    public Integer getId() { return id; }
+    public void setId(Integer id) { this.id = id; }
+    public Stock getStock() { return stock; }
+    public void setStock(Stock stock) { this.stock = stock; }
+    public Item getItem() { return item; }
+    public void setItem(Item item) { this.item = item; }
+    public Invoiceinfo getInvoiceinfo() { return invoiceinfo; }
+    public void setInvoiceinfo(Invoiceinfo invoiceinfo) { this.invoiceinfo = invoiceinfo; }
+    public Employee getEmployee() { return employee; }
+    public void setEmployee(Employee employee) { this.employee = employee; }
+    public String getBatch() { return batch; }
+    public void setBatch(String batch) { this.batch = batch; }
+    public Date getDateTime() { return dateTime; }
+    public void setDateTime(Date dateTime) { this.dateTime = dateTime; }
+    public Integer getQty() { return qty; }
+    public void setQty(Integer qty) { this.qty = qty; }
+    public Double getSubTotal() { return subTotal; }
+    public void setSubTotal(Double subTotal) { this.subTotal = subTotal; }
 }
