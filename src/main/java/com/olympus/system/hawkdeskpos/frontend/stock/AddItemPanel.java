@@ -1,6 +1,9 @@
 package com.olympus.system.hawkdeskpos.frontend.stock;
 
+import com.olympus.system.hawkdeskpos.db.dao.Brands;
+import com.olympus.system.hawkdeskpos.db.dao.Category;
 import com.olympus.system.hawkdeskpos.frontend.Home;
+import com.olympus.system.hawkdeskpos.frontend.admin.ManageCategoriesPanel;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
 import com.olympus.system.hawkdeskpos.service.CategoryService;
 import com.olympus.system.hawkdeskpos.service.ItemService;
@@ -9,6 +12,7 @@ import com.olympus.system.hawkdeskpos.session.SessionContext;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 /**
@@ -30,6 +34,10 @@ public class AddItemPanel extends JPanel {
     private JComboBox<String> statusCombo;
     private JTextField costField, priceField, taxField;
     private JSpinner   openingQtySpinner, minLevelSpinner, maxLevelSpinner;
+
+    // Category/brand name-to-id maps (populated with list data)
+    private List<Category> catList;
+    private List<Brands>   brandList;
 
     // Sidebar
     private JProgressBar marginBar;
@@ -113,8 +121,8 @@ public class AddItemPanel extends JPanel {
 
         grid.add(labeled("Item Name *", nameField));
         grid.add(labeled("SKU *", skuField));
-        grid.add(labeled("Category *", catCombo));
-        grid.add(labeled("Brand", brandCombo));
+        grid.add(labeledWithAdd("Category *", catCombo, this::quickAddCategory));
+        grid.add(labeledWithAdd("Brand", brandCombo, this::quickAddBrand));
         grid.add(labeled("Unit of measure", unitField));
         grid.add(labeled("Status", statusCombo));
 
@@ -239,18 +247,25 @@ public class AddItemPanel extends JPanel {
 
     private void loadCombosAsync() {
         new SwingWorker<Void, Void>() {
-            java.util.List<String> cats, brands;
+            List<Category> cats;
+            List<Brands>   brands;
             @Override protected Void doInBackground() {
-                cats   = categoryService.listCategories().stream().map(c -> c.getCategoryName()).collect(Collectors.toList());
-                brands = categoryService.listBrands().stream().map(b -> b.getBrandName()).collect(Collectors.toList());
+                cats   = categoryService.listCategories();
+                brands = categoryService.listBrands();
                 return null;
             }
             @Override protected void done() {
+                catList   = cats;
+                brandList = brands;
+                String selectedCat   = (String) catCombo.getSelectedItem();
+                String selectedBrand = (String) brandCombo.getSelectedItem();
                 catCombo.removeAllItems();
-                cats.forEach(catCombo::addItem);
+                cats.forEach(c -> catCombo.addItem(c.getCategoryName()));
+                if (selectedCat != null) catCombo.setSelectedItem(selectedCat);
                 brandCombo.removeAllItems();
                 brandCombo.addItem("");
-                brands.forEach(brandCombo::addItem);
+                brands.forEach(b -> brandCombo.addItem(b.getBrandName()));
+                if (selectedBrand != null) brandCombo.setSelectedItem(selectedBrand);
             }
         }.execute();
     }
@@ -263,6 +278,157 @@ public class AddItemPanel extends JPanel {
             }
         }.execute();
     }
+
+    // ── Quick-create dialogs ──────────────────────────────────────────────────
+
+    private void quickAddCategory() {
+        JDialog dlg = new JDialog(SwingUtilities.getWindowAncestor(this), "New Category", Dialog.ModalityType.APPLICATION_MODAL);
+        dlg.setSize(360, 230);
+        dlg.setLocationRelativeTo(this);
+        dlg.setLayout(new BorderLayout());
+
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(new EmptyBorder(14, 16, 14, 16));
+
+        JLabel nameLbl = new JLabel("Category name");
+        nameLbl.setFont(nameLbl.getFont().deriveFont(12f));
+        nameLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(nameLbl);
+        body.add(Box.createVerticalStrut(4));
+
+        JTextField nameField = new JTextField();
+        nameField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        nameField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(nameField);
+        body.add(Box.createVerticalStrut(10));
+
+        JLabel colLbl = new JLabel("Colour");
+        colLbl.setFont(colLbl.getFont().deriveFont(12f));
+        colLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(colLbl);
+        body.add(Box.createVerticalStrut(4));
+
+        final String[] selectedColour = { ManageCategoriesPanel.PALETTE[6] };
+        JPanel swatchRow = ManageCategoriesPanel.buildSwatchRow(selectedColour);
+        swatchRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(swatchRow);
+
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JButton cancel = new JButton("Cancel");
+        cancel.addActionListener(e -> dlg.dispose());
+        JButton create = new JButton("Create");
+        create.setBackground(NAVY);
+        create.setForeground(Color.WHITE);
+        create.setOpaque(true);
+        create.setBorderPainted(false);
+        create.addActionListener(e -> {
+            String name = nameField.getText().trim();
+            if (name.isEmpty()) return;
+            final String finalName = name;
+            new SwingWorker<Void, Void>() {
+                @Override protected Void doInBackground() {
+                    Long actor = SessionContext.current() != null ? SessionContext.current().getEmployee().id() : null;
+                    categoryService.addCategory(finalName, selectedColour[0], actor);
+                    return null;
+                }
+                @Override protected void done() {
+                    dlg.dispose();
+                    new SwingWorker<Void, Void>() {
+                        List<Category> cats; List<Brands> brands;
+                        @Override protected Void doInBackground() {
+                            cats   = categoryService.listCategories();
+                            brands = categoryService.listBrands();
+                            return null;
+                        }
+                        @Override protected void done() {
+                            catList   = cats;
+                            brandList = brands;
+                            catCombo.removeAllItems();
+                            cats.forEach(c -> catCombo.addItem(c.getCategoryName()));
+                            catCombo.setSelectedItem(finalName);
+                        }
+                    }.execute();
+                }
+            }.execute();
+        });
+        btns.add(cancel);
+        btns.add(create);
+
+        dlg.add(body, BorderLayout.CENTER);
+        dlg.add(btns, BorderLayout.SOUTH);
+        dlg.setVisible(true);
+    }
+
+    private void quickAddBrand() {
+        JDialog dlg = new JDialog(SwingUtilities.getWindowAncestor(this), "New Brand", Dialog.ModalityType.APPLICATION_MODAL);
+        dlg.setSize(300, 150);
+        dlg.setLocationRelativeTo(this);
+        dlg.setLayout(new BorderLayout());
+
+        JPanel body = new JPanel();
+        body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
+        body.setBorder(new EmptyBorder(14, 16, 14, 16));
+
+        JLabel nameLbl = new JLabel("Brand name");
+        nameLbl.setFont(nameLbl.getFont().deriveFont(12f));
+        nameLbl.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(nameLbl);
+        body.add(Box.createVerticalStrut(4));
+
+        JTextField nameField = new JTextField();
+        nameField.setMaximumSize(new Dimension(Integer.MAX_VALUE, 32));
+        nameField.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(nameField);
+
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        JButton cancel = new JButton("Cancel");
+        cancel.addActionListener(e -> dlg.dispose());
+        JButton create = new JButton("Create");
+        create.setBackground(NAVY);
+        create.setForeground(Color.WHITE);
+        create.setOpaque(true);
+        create.setBorderPainted(false);
+        create.addActionListener(e -> {
+            String name = nameField.getText().trim();
+            if (name.isEmpty()) return;
+            final String finalName = name;
+            new SwingWorker<Void, Void>() {
+                @Override protected Void doInBackground() {
+                    Long actor = SessionContext.current() != null ? SessionContext.current().getEmployee().id() : null;
+                    categoryService.addBrand(finalName, actor);
+                    return null;
+                }
+                @Override protected void done() {
+                    dlg.dispose();
+                    new SwingWorker<Void, Void>() {
+                        List<Category> cats; List<Brands> brands;
+                        @Override protected Void doInBackground() {
+                            cats   = categoryService.listCategories();
+                            brands = categoryService.listBrands();
+                            return null;
+                        }
+                        @Override protected void done() {
+                            catList   = cats;
+                            brandList = brands;
+                            brandCombo.removeAllItems();
+                            brandCombo.addItem("");
+                            brands.forEach(b -> brandCombo.addItem(b.getBrandName()));
+                            brandCombo.setSelectedItem(finalName);
+                        }
+                    }.execute();
+                }
+            }.execute();
+        });
+        btns.add(cancel);
+        btns.add(create);
+
+        dlg.add(body, BorderLayout.CENTER);
+        dlg.add(btns, BorderLayout.SOUTH);
+        dlg.setVisible(true);
+    }
+
+    // ── Margin / preview updates ──────────────────────────────────────────────
 
     private void updateMargin() {
         try {
@@ -287,30 +453,45 @@ public class AddItemPanel extends JPanel {
         } catch (NumberFormatException ignored) {}
     }
 
+    // ── Save ──────────────────────────────────────────────────────────────────
+
     private void saveItem() {
-        // Validate
         if (nameField.getText().trim().isEmpty()) { warn("Item name is required."); return; }
         if (skuField.getText().trim().isEmpty())  { warn("SKU is required."); return; }
         double cost = 0, price = 0;
         try { cost = Double.parseDouble(costField.getText().trim()); } catch (Exception e) { warn("Invalid cost price."); return; }
         try { price = Double.parseDouble(priceField.getText().trim()); } catch (Exception e) { warn("Invalid selling price."); return; }
 
-        // Check SKU uniqueness
         if (!itemService.isSkuUnique(skuField.getText().trim(), null)) {
             warn("SKU already exists. Please use a different SKU."); return;
         }
 
+        // Resolve category and brand IDs from selected names
+        String selectedCat   = (String) catCombo.getSelectedItem();
+        String selectedBrand = (String) brandCombo.getSelectedItem();
         Integer catId   = null;
         Integer brandId = null;
-        // (would look up IDs from names in a real scenario — simplified here)
+        if (catList != null && selectedCat != null) {
+            catId = catList.stream()
+                    .filter(c -> c.getCategoryName().equals(selectedCat))
+                    .map(Category::getCatId)
+                    .findFirst().orElse(null);
+        }
+        if (brandList != null && selectedBrand != null && !selectedBrand.isEmpty()) {
+            brandId = brandList.stream()
+                    .filter(b -> b.getBrandName().equals(selectedBrand))
+                    .map(Brands::getBrandId)
+                    .findFirst().orElse(null);
+        }
 
         final double fc = cost, fp = price;
+        final Integer finalCatId = catId, finalBrandId = brandId;
         new SwingWorker<Integer, Void>() {
             @Override protected Integer doInBackground() {
                 Long empId = SessionContext.current() != null ? SessionContext.current().getEmployee().id() : null;
                 return itemService.createItem(
                         nameField.getText().trim(), skuField.getText().trim(),
-                        catId, brandId, unitField.getText().trim(),
+                        finalCatId, finalBrandId, unitField.getText().trim(),
                         fc, fp,
                         (int) openingQtySpinner.getValue(),
                         (int) minLevelSpinner.getValue(),
@@ -357,6 +538,29 @@ public class AddItemPanel extends JPanel {
         l.setForeground(new Color(0x5A, 0x60, 0x70));
         p.add(l, BorderLayout.NORTH);
         p.add(comp, BorderLayout.CENTER);
+        return p;
+    }
+
+    /** Wraps a combo box with a "+" button on the right. */
+    private JPanel labeledWithAdd(String lbl, JComboBox<String> combo, Runnable onAdd) {
+        JPanel p = new JPanel(new BorderLayout(0, 4));
+        p.setOpaque(false);
+        JLabel l = new JLabel(lbl);
+        l.setFont(l.getFont().deriveFont(12f));
+        l.setForeground(new Color(0x5A, 0x60, 0x70));
+        p.add(l, BorderLayout.NORTH);
+
+        JPanel row = new JPanel(new BorderLayout(4, 0));
+        row.setOpaque(false);
+        row.add(combo, BorderLayout.CENTER);
+        JButton addBtn = new JButton("+");
+        addBtn.setFont(addBtn.getFont().deriveFont(Font.BOLD, 14f));
+        addBtn.setForeground(NAVY);
+        addBtn.setPreferredSize(new Dimension(30, 0));
+        addBtn.setToolTipText("Add new " + lbl.replace(" *", "").toLowerCase());
+        addBtn.addActionListener(e -> onAdd.run());
+        row.add(addBtn, BorderLayout.EAST);
+        p.add(row, BorderLayout.CENTER);
         return p;
     }
 

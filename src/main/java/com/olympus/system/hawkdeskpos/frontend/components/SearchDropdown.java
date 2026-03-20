@@ -11,7 +11,7 @@ import java.util.function.Function;
 
 /**
  * Live-search text field with a popup showing matching items.
- * Decoupled from the data source via a Function callback.
+ * Uses a JWindow (not JPopupMenu) so the text field keeps keyboard focus.
  *
  * Usage:
  *   SearchDropdown sd = new SearchDropdown(
@@ -28,7 +28,7 @@ public class SearchDropdown extends JPanel {
     private static final Color NAVY      = new Color(0x1E, 0x3A, 0x5F);
 
     private final JTextField                    searchField;
-    private final JPopupMenu                    popup;
+    private final JWindow                       dropWindow;
     private final DefaultListModel<ItemDto>     model;
     private final JList<ItemDto>                resultList;
     private final Function<String, List<ItemDto>> searcher;
@@ -48,7 +48,7 @@ public class SearchDropdown extends JPanel {
         searchField.setToolTipText("Search by item name or SKU…");
         add(searchField, BorderLayout.CENTER);
 
-        // Popup list
+        // Drop-down list
         model      = new DefaultListModel<>();
         resultList = new JList<>(model);
         resultList.setCellRenderer(new ItemCellRenderer());
@@ -58,11 +58,11 @@ public class SearchDropdown extends JPanel {
         JScrollPane scroll = new JScrollPane(resultList);
         scroll.setBorder(BorderFactory.createLineBorder(BORDER_C));
 
-        popup = new JPopupMenu();
-        popup.setLayout(new BorderLayout());
-        popup.setBorder(BorderFactory.createLineBorder(BORDER_C));
-        popup.add(scroll);
-        popup.setFocusable(false);
+        // JWindow — does NOT steal focus from the text field
+        dropWindow = new JWindow();
+        dropWindow.setLayout(new BorderLayout());
+        dropWindow.add(scroll);
+        dropWindow.setFocusableWindowState(false);
 
         // Search-as-you-type with 250 ms debounce
         searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
@@ -74,12 +74,12 @@ public class SearchDropdown extends JPanel {
         // Keyboard navigation
         searchField.addKeyListener(new KeyAdapter() {
             @Override public void keyPressed(KeyEvent e) {
-                if (e.getKeyCode() == KeyEvent.VK_DOWN  && popup.isVisible()) {
+                if (e.getKeyCode() == KeyEvent.VK_DOWN && dropWindow.isVisible()) {
                     resultList.requestFocusInWindow();
                     resultList.setSelectedIndex(0);
                 } else if (e.getKeyCode() == KeyEvent.VK_ESCAPE) {
-                    popup.setVisible(false);
-                } else if (e.getKeyCode() == KeyEvent.VK_ENTER && popup.isVisible()) {
+                    dropWindow.setVisible(false);
+                } else if (e.getKeyCode() == KeyEvent.VK_ENTER && dropWindow.isVisible()) {
                     selectCurrent();
                 }
             }
@@ -88,13 +88,22 @@ public class SearchDropdown extends JPanel {
         resultList.addKeyListener(new KeyAdapter() {
             @Override public void keyPressed(KeyEvent e) {
                 if (e.getKeyCode() == KeyEvent.VK_ENTER)  selectCurrent();
-                if (e.getKeyCode() == KeyEvent.VK_ESCAPE) { popup.setVisible(false); searchField.requestFocusInWindow(); }
+                if (e.getKeyCode() == KeyEvent.VK_ESCAPE) { dropWindow.setVisible(false); searchField.requestFocusInWindow(); }
             }
         });
 
         resultList.addMouseListener(new MouseAdapter() {
             @Override public void mouseClicked(MouseEvent e) {
                 if (e.getClickCount() >= 1) selectCurrent();
+            }
+        });
+
+        // Dismiss when focus leaves the search field (150 ms delay so list clicks register first)
+        searchField.addFocusListener(new FocusAdapter() {
+            @Override public void focusLost(FocusEvent e) {
+                Timer t = new Timer(150, ev -> dropWindow.setVisible(false));
+                t.setRepeats(false);
+                t.start();
             }
         });
     }
@@ -105,7 +114,7 @@ public class SearchDropdown extends JPanel {
     /** Clears the search field. */
     public void clear() {
         searchField.setText("");
-        popup.setVisible(false);
+        dropWindow.setVisible(false);
         model.clear();
     }
 
@@ -118,19 +127,23 @@ public class SearchDropdown extends JPanel {
 
     private void performSearch() {
         String q = searchField.getText().trim();
-        if (q.isEmpty()) { popup.setVisible(false); model.clear(); return; }
+        if (q.isEmpty()) { dropWindow.setVisible(false); model.clear(); return; }
         new SwingWorker<List<ItemDto>, Void>() {
             @Override protected List<ItemDto> doInBackground() { return searcher.apply(q); }
             @Override protected void done() {
                 try {
                     List<ItemDto> items = get();
                     model.clear();
-                    if (items.isEmpty()) { popup.setVisible(false); return; }
+                    if (items.isEmpty()) { dropWindow.setVisible(false); return; }
                     items.forEach(model::addElement);
                     resultList.setVisibleRowCount(Math.min(items.size(), 8));
                     int rowH = 52;
-                    popup.setPreferredSize(new Dimension(searchField.getWidth(), Math.min(items.size(), 8) * rowH + 4));
-                    popup.show(searchField, 0, searchField.getHeight());
+                    int visRows = Math.min(items.size(), 8);
+                    // Position directly below the text field using screen coordinates
+                    Point p = searchField.getLocationOnScreen();
+                    dropWindow.setBounds(p.x, p.y + searchField.getHeight(),
+                            searchField.getWidth(), visRows * rowH + 4);
+                    dropWindow.setVisible(true);
                     searchField.requestFocusInWindow();
                 } catch (Exception ignored) {}
             }
@@ -141,7 +154,7 @@ public class SearchDropdown extends JPanel {
         ItemDto selected = resultList.getSelectedValue();
         if (selected == null && model.getSize() > 0) selected = model.getElementAt(0);
         if (selected != null) {
-            popup.setVisible(false);
+            dropWindow.setVisible(false);
             clear();
             onSelect.accept(selected);
         }

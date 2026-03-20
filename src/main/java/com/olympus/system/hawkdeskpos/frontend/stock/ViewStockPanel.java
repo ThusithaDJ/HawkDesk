@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 /**
  * View Stock screen — stat bar + filters + sortable table.
  */
-public class ViewStockPanel extends JPanel {
+public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
     private static final Color BG    = new Color(0xF0, 0xF2, 0xF5);
     private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);

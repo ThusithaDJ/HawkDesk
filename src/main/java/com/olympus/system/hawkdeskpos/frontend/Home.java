@@ -3,6 +3,7 @@ package com.olympus.system.hawkdeskpos.frontend;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
 import com.olympus.system.hawkdeskpos.frontend.admin.*;
 import com.olympus.system.hawkdeskpos.frontend.components.NavBar;
+import com.olympus.system.hawkdeskpos.frontend.components.Refreshable;
 import com.olympus.system.hawkdeskpos.frontend.finance.GrnHistoryPanel;
 import com.olympus.system.hawkdeskpos.frontend.reports.ReportsPanel;
 import com.olympus.system.hawkdeskpos.frontend.sale.*;
@@ -165,7 +166,11 @@ public class Home extends JFrame {
     // ── Static navigation API ─────────────────────────────────────────────────
 
     public static void navigate(String card) {
-        if (instance != null) instance.cardLayout.show(instance.cardHost, card);
+        if (instance == null) return;
+        instance.cardLayout.show(instance.cardHost, card);
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c.isVisible() && c instanceof Refreshable r) { r.refresh(); break; }
+        }
     }
 
     public static void navigateToEditItem(int itemId) {

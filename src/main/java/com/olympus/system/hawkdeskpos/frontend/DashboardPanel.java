@@ -21,7 +21,7 @@ import java.util.List;
  * Left/Centre: hero button + 2x2 stock grid + 1x3 sales grid.
  * Right sidebar: today's summary + low stock + quick notes + links.
  */
-public class DashboardPanel extends JPanel {
+public class DashboardPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
     private static final Color NAVY    = new Color(0x1E, 0x3A, 0x5F);
     private static final Color BG      = new Color(0xF0, 0xF2, 0xF5);

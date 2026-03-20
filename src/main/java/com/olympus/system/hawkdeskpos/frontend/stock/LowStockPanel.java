@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
  * Low Stock Alerts screen.
  * Shows out/low counts; checkable item list; suggests order quantities.
  */
-public class LowStockPanel extends JPanel {
+public class LowStockPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
     private static final Color BG    = new Color(0xF0, 0xF2, 0xF5);
     private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);

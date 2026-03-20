@@ -15,7 +15,7 @@ import java.util.List;
 /**
  * GRN History screen — searchable table of all goods received notes.
  */
-public class GrnHistoryPanel extends JPanel {
+public class GrnHistoryPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
     private static final Color BG    = new Color(0xF0, 0xF2, 0xF5);
     private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);

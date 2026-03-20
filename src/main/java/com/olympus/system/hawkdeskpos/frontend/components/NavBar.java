@@ -110,6 +110,25 @@ public class NavBar extends JPanel {
         });
         right.add(logoutBtn);
 
+        JButton exitBtn = new JButton("Exit");
+        exitBtn.setForeground(WHITE);
+        exitBtn.setBackground(new Color(255, 255, 255, 30));
+        exitBtn.setOpaque(true);
+        exitBtn.setBorderPainted(false);
+        exitBtn.setFont(exitBtn.getFont().deriveFont(13f));
+        exitBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        exitBtn.addActionListener(e -> {
+            int res = JOptionPane.showConfirmDialog(null,
+                    "Exit HawkPOS? Any unsaved changes will be lost.",
+                    "Exit", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (res == JOptionPane.YES_OPTION) System.exit(0);
+        });
+        exitBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { exitBtn.setBackground(new Color(0xC6, 0x28, 0x28)); }
+            @Override public void mouseExited(MouseEvent e)  { exitBtn.setBackground(new Color(255,255,255,30)); }
+        });
+        right.add(exitBtn);
+
         add(right, BorderLayout.EAST);
 
         // Live clock — updates every 30 seconds

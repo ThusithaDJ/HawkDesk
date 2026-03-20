@@ -132,8 +132,20 @@ public class LoginPanel extends JPanel {
         bottom.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(255,255,255,20)),
                 new EmptyBorder(12, 28, 14, 28)));
-        JLabel version = label("HawkPOS v2.0  ·  Last backup: —", 12, Font.PLAIN, new Color(255,255,255,89));
-        bottom.add(version, BorderLayout.WEST);
+        JButton exitBtn = new JButton("Exit");
+        exitBtn.setForeground(WHITE);
+        exitBtn.setBackground(new Color(255, 255, 255, 0));
+        exitBtn.setOpaque(true);
+        exitBtn.setBorderPainted(false);
+        exitBtn.setFocusPainted(false);
+        exitBtn.setFont(exitBtn.getFont().deriveFont(12f));
+        exitBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        exitBtn.addActionListener(e -> System.exit(0));
+        exitBtn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseEntered(java.awt.event.MouseEvent e) { exitBtn.setForeground(new Color(0xFC, 0x8C, 0x8C)); }
+            @Override public void mouseExited(java.awt.event.MouseEvent e)  { exitBtn.setForeground(WHITE); }
+        });
+        bottom.add(exitBtn, BorderLayout.WEST);
         JLabel copy = label("© 2026 Olympus Systems", 12, Font.PLAIN, new Color(255,255,255,89));
         bottom.add(copy, BorderLayout.EAST);
         add(bottom, BorderLayout.SOUTH);

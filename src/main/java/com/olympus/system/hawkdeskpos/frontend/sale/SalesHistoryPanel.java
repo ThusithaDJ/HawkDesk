@@ -16,7 +16,7 @@ import java.util.List;
  * Sales History screen.
  * Stat bar + filters + sortable JTable with right-side detail panel on row click.
  */
-public class SalesHistoryPanel extends JPanel {
+public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
     private static final Color BG    = new Color(0xF0, 0xF2, 0xF5);
     private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);
