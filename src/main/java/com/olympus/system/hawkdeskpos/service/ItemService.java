@@ -28,9 +28,8 @@ public class ItemService {
         try (var session = sf.openSession()) {
             String q = "%" + query.trim().toLowerCase() + "%";
             return session.createQuery(
-                    "SELECT i FROM Item i LEFT JOIN FETCH i.stocks s " +
-                    "WHERE lower(i.itemName) LIKE :q OR lower(i.sku) LIKE :q " +
-                    "AND i.stat = 'Active' GROUP BY i.itemId ORDER BY i.itemName",
+                    "FROM Item i WHERE (lower(i.itemName) LIKE :q OR lower(i.sku) LIKE :q) " +
+                    "AND i.stat = 'Active' ORDER BY i.itemName",
                     Item.class)
                     .setParameter("q", q)
                     .setMaxResults(8)
