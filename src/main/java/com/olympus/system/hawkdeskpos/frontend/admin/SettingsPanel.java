@@ -24,7 +24,7 @@ public class SettingsPanel extends JPanel {
     private JPanel contentArea;
     private static final String[] SECTIONS = {
             "Shop Details", "Sales & Billing", "Receipt & Printing",
-            "Stock & Inventory", "UI Appearance", "Backup", "User Management"
+            "Stock & Inventory", "Categories & Brands", "UI Appearance", "Backup", "User Management"
     };
 
     // Shop details fields
@@ -132,8 +132,9 @@ public class SettingsPanel extends JPanel {
             case "Sales & Billing"   -> buildSalesBillingSection();
             case "Stock & Inventory" -> buildStockSection();
             case "UI Appearance"     -> buildAppearanceSection();
-            case "Backup"            -> { Home.navigate(Home.CARD_BACKUP); yield new JPanel(); }
-            case "User Management"   -> { Home.navigate(Home.CARD_USERS);  yield new JPanel(); }
+            case "Categories & Brands" -> { Home.navigate(Home.CARD_CATS);   yield new JPanel(); }
+            case "Backup"              -> { Home.navigate(Home.CARD_BACKUP); yield new JPanel(); }
+            case "User Management"     -> { Home.navigate(Home.CARD_USERS);  yield new JPanel(); }
             default                  -> buildShopDetailsSection();
         };
         contentArea.add(content, BorderLayout.CENTER);
