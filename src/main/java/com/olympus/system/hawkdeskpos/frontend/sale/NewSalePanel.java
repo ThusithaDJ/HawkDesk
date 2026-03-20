@@ -4,7 +4,7 @@ import com.olympus.system.hawkdeskpos.dto.ItemDto;
 import com.olympus.system.hawkdeskpos.dto.SaleLineDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
-import com.olympus.system.hawkdeskpos.frontend.components.SearchDropdown;
+import com.olympus.system.hawkdeskpos.frontend.components.StatusPill;
 import com.olympus.system.hawkdeskpos.service.ItemService;
 import com.olympus.system.hawkdeskpos.service.SaleService;
 import com.olympus.system.hawkdeskpos.service.SettingsService;
@@ -14,6 +14,8 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -41,6 +43,11 @@ public class NewSalePanel extends JPanel {
     private JTextField discountField, amountRecField;
     private JToggleButton btnCash, btnCard, btnCredit;
     private String     paymentMethod = "CASH";
+
+    // Inline search
+    private JTextField searchField;
+    private JPanel     resultsPanel;
+    private Timer      searchDebounce;
 
     public NewSalePanel(ItemService itemService, SaleService saleService, SettingsService settingsService) {
         this.itemService = itemService;
@@ -93,15 +100,157 @@ public class NewSalePanel extends JPanel {
     }
 
     private JPanel buildSearchSection() {
-        CardPanel c = new CardPanel(new BorderLayout(8, 0));
-        ((JPanel)c).setBorder(new EmptyBorder(10, 14, 10, 14));
+        JPanel wrapper = new JPanel(new BorderLayout(0, 0));
+        wrapper.setOpaque(false);
+
+        // ── Search bar ────────────────────────────────────────────────────────
+        CardPanel bar = new CardPanel(new BorderLayout(8, 0));
+        ((JPanel)bar).setBorder(new EmptyBorder(10, 14, 10, 14));
+
         JLabel hint = new JLabel("Search item by name or SKU:");
         hint.setForeground(TEXT2);
-        SearchDropdown search = new SearchDropdown(itemService::search, this::addToCart);
-        search.setPreferredSize(new Dimension(400, 32));
-        ((JPanel)c).add(hint,   BorderLayout.WEST);
-        ((JPanel)c).add(search, BorderLayout.CENTER);
-        return c;
+        hint.setFont(hint.getFont().deriveFont(13f));
+
+        searchField = new JTextField();
+        searchField.setFont(searchField.getFont().deriveFont(14f));
+        searchField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xC8, 0xCD, 0xD6)),
+                new EmptyBorder(6, 10, 6, 10)));
+        searchField.setToolTipText("Type item name or SKU…");
+
+        searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { scheduleSearch(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { scheduleSearch(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) {}
+        });
+        searchField.addKeyListener(new KeyAdapter() {
+            @Override public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ESCAPE) clearResults();
+                if (e.getKeyCode() == KeyEvent.VK_DOWN)   focusFirstResult();
+            }
+        });
+
+        ((JPanel)bar).add(hint,        BorderLayout.WEST);
+        ((JPanel)bar).add(searchField, BorderLayout.CENTER);
+        wrapper.add(bar, BorderLayout.NORTH);
+
+        // ── Inline results panel (hidden until results arrive) ────────────────
+        resultsPanel = new JPanel();
+        resultsPanel.setLayout(new BoxLayout(resultsPanel, BoxLayout.Y_AXIS));
+        resultsPanel.setBackground(Color.WHITE);
+
+        // Scroll container — max 5 rows tall (54 px each + padding)
+        JScrollPane resultScroll = new JScrollPane(resultsPanel);
+        resultScroll.setBorder(BorderFactory.createMatteBorder(0, 1, 1, 1, new Color(0xC8, 0xCD, 0xD6)));
+        resultScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54 * 5 + 8));
+        resultScroll.setPreferredSize(new Dimension(0, 54 * 5 + 8));
+        resultScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
+        resultScroll.setVisible(false);
+        // Keep resultsPanel ref but track visibility on the scroll pane
+        resultsPanel.putClientProperty("scrollPane", resultScroll);
+
+        wrapper.add(resultScroll, BorderLayout.CENTER);
+        return wrapper;
+    }
+
+    private void scheduleSearch() {
+        if (searchDebounce != null && searchDebounce.isRunning()) searchDebounce.stop();
+        searchDebounce = new Timer(220, e -> performSearch());
+        searchDebounce.setRepeats(false);
+        searchDebounce.start();
+    }
+
+    private JScrollPane getResultScroll() {
+        return (JScrollPane) resultsPanel.getClientProperty("scrollPane");
+    }
+
+    private void performSearch() {
+        String q = searchField.getText().trim();
+        if (q.isEmpty()) { clearResults(); return; }
+        new SwingWorker<List<ItemDto>, Void>() {
+            @Override protected List<ItemDto> doInBackground() { return itemService.search(q); }
+            @Override protected void done() {
+                try {
+                    List<ItemDto> items = get();
+                    resultsPanel.removeAll();
+                    if (items.isEmpty()) { getResultScroll().setVisible(false); triggerLayout(); return; }
+                    for (ItemDto item : items) resultsPanel.add(buildResultRow(item));
+                    getResultScroll().setVisible(true);
+                    triggerLayout();
+                } catch (Exception ignored) {}
+            }
+        }.execute();
+    }
+
+    private void triggerLayout() {
+        Container c = (getResultScroll() != null ? getResultScroll() : resultsPanel).getParent();
+        while (c != null) { c.revalidate(); c.repaint(); c = c.getParent(); }
+    }
+
+    private JPanel buildResultRow(ItemDto item) {
+        JPanel row = new JPanel(new BorderLayout(10, 0));
+        row.setBackground(Color.WHITE);
+        row.setOpaque(true);
+        row.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(0xF0, 0xF2, 0xF5)),
+                new EmptyBorder(8, 14, 8, 14)));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54));
+        row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+        // Left: name + sku · category
+        JPanel left = new JPanel(new GridLayout(2, 1, 0, 2));
+        left.setOpaque(false);
+        JLabel nameLbl = new JLabel(item.itemName());
+        nameLbl.setFont(nameLbl.getFont().deriveFont(Font.BOLD, 13f));
+        JLabel subLbl = new JLabel(item.sku() + "  ·  " + item.categoryName());
+        subLbl.setFont(subLbl.getFont().deriveFont(11f));
+        subLbl.setForeground(TEXT2);
+        left.add(nameLbl);
+        left.add(subLbl);
+        row.add(left, BorderLayout.CENTER);
+
+        // Right: stock pill + price
+        JPanel right = new JPanel(new GridLayout(2, 1, 0, 2));
+        right.setOpaque(false);
+        StatusPill pill = StatusPill.forStatus(item.stockStatus());
+        pill.setHorizontalAlignment(SwingConstants.RIGHT);
+        JLabel priceLbl = new JLabel(String.format("Rs. %.2f", item.sellingPrice()));
+        priceLbl.setFont(priceLbl.getFont().deriveFont(Font.BOLD, 12f));
+        priceLbl.setForeground(NAVY);
+        priceLbl.setHorizontalAlignment(SwingConstants.RIGHT);
+        right.add(pill);
+        right.add(priceLbl);
+        row.add(right, BorderLayout.EAST);
+
+        // Hover highlight
+        row.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseEntered(java.awt.event.MouseEvent e) { row.setBackground(new Color(0xF7, 0xF8, 0xFA)); }
+            @Override public void mouseExited(java.awt.event.MouseEvent e)  { row.setBackground(Color.WHITE); }
+            @Override public void mouseClicked(java.awt.event.MouseEvent e) { addToCart(item); clearResults(); }
+        });
+
+        // Keyboard select when row gains focus
+        row.setFocusable(true);
+        row.addKeyListener(new KeyAdapter() {
+            @Override public void keyPressed(KeyEvent e) {
+                if (e.getKeyCode() == KeyEvent.VK_ENTER)  { addToCart(item); clearResults(); }
+                if (e.getKeyCode() == KeyEvent.VK_ESCAPE) { clearResults(); searchField.requestFocusInWindow(); }
+            }
+        });
+
+        return row;
+    }
+
+    private void clearResults() {
+        resultsPanel.removeAll();
+        getResultScroll().setVisible(false);
+        triggerLayout();
+        searchField.setText("");
+    }
+
+    private void focusFirstResult() {
+        if (getResultScroll().isVisible() && resultsPanel.getComponentCount() > 0)
+            resultsPanel.getComponent(0).requestFocusInWindow();
     }
 
     private JPanel buildCartSection() {
