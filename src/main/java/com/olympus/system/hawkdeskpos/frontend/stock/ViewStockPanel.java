@@ -96,17 +96,31 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         statsWrapper.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
 
         // ── Filters ───────────────────────────────────────────────────────────
-        JPanel filters = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
-        filters.setOpaque(false);
+        JPanel searchBar = new JPanel(new BorderLayout(8, 0));
+        searchBar.setOpaque(false);
+        searchBar.setBorder(new EmptyBorder(0, 0, 8, 0));
 
-        searchField = new JTextField(20);
-        searchField.putClientProperty("JTextField.placeholderText", "Search items…");
+        JLabel searchHint = new JLabel("Search items:");
+        searchHint.setForeground(TEXT2);
+        searchHint.setFont(searchHint.getFont().deriveFont(13f));
+
+        searchField = new JTextField();
+        searchField.setFont(searchField.getFont().deriveFont(14f));
+        searchField.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xC8, 0xCD, 0xD6)),
+                new EmptyBorder(6, 10, 6, 10)));
+        searchField.setToolTipText("Type item name or SKU…");
         searchField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
             public void insertUpdate(javax.swing.event.DocumentEvent e) { applyFilter(); }
             public void removeUpdate(javax.swing.event.DocumentEvent e) { applyFilter(); }
             public void changedUpdate(javax.swing.event.DocumentEvent e) {}
         });
-        filters.add(searchField);
+
+        searchBar.add(searchHint,  BorderLayout.WEST);
+        searchBar.add(searchField, BorderLayout.CENTER);
+
+        JPanel filters = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 0));
+        filters.setOpaque(false);
 
         catFilter = new JComboBox<>(new String[]{"All Categories"});
         filters.add(catFilter);
@@ -116,6 +130,11 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         filters.add(statusFilter);
 
         catFilter.addActionListener(e -> applyFilter());
+
+        JPanel filterSection = new JPanel(new BorderLayout(0, 4));
+        filterSection.setOpaque(false);
+        filterSection.add(searchBar, BorderLayout.NORTH);
+        filterSection.add(filters,   BorderLayout.CENTER);
 
         // ── Table ─────────────────────────────────────────────────────────────
         tableModel = new DefaultTableModel(COLUMNS, 0) {
@@ -147,8 +166,8 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         content.add(statsWrapper, BorderLayout.NORTH);
 
         CardPanel tableCard = new CardPanel(new BorderLayout(0, 0));
-        tableCard.add(filters, BorderLayout.NORTH);
-        tableCard.add(scroll,  BorderLayout.CENTER);
+        tableCard.add(filterSection, BorderLayout.NORTH);
+        tableCard.add(scroll,        BorderLayout.CENTER);
         ((JPanel)tableCard).setBorder(new EmptyBorder(12, 12, 12, 12));
         content.add(tableCard, BorderLayout.CENTER);
 

@@ -26,17 +26,22 @@ public class SaleService {
 
     public TodaySummary getTodaySummary() {
         try (var session = sf.openSession()) {
+            // Revenue + transaction count
             Object[] row = (Object[]) session.createNativeQuery(
-                    "SELECT COALESCE(SUM(total),0), COUNT(*), COALESCE(SUM(items),0) FROM " +
-                    "(SELECT ii.total, 1 AS cnt, " +
-                    "(SELECT SUM(qty) FROM invoice i WHERE i.invoice_no = ii.invoice_no) AS items " +
-                    "FROM invoiceinfo ii WHERE DATE(ii.date) = CURDATE() AND ii.stat != 'Void') sub",
+                    "SELECT COALESCE(SUM(total), 0), COUNT(*) " +
+                    "FROM invoiceinfo WHERE DATE(date) = CURDATE() AND stat != 'Void'",
                     Object[].class).uniqueResult();
+            // Items sold (separate query avoids LEFT JOIN row multiplication)
+            Object itemsObj = session.createNativeQuery(
+                    "SELECT COALESCE(SUM(i.qty), 0) FROM invoice i " +
+                    "JOIN invoiceinfo ii ON i.invoice_no = ii.invoice_no " +
+                    "WHERE DATE(ii.date) = CURDATE() AND ii.stat != 'Void'",
+                    Object.class).uniqueResult();
             if (row == null) return new TodaySummary(0, 0, 0);
             return new TodaySummary(
                     row[0] instanceof Number n ? n.doubleValue() : 0,
                     row[1] instanceof Number n ? n.intValue()    : 0,
-                    row[2] instanceof Number n ? n.intValue()    : 0);
+                    itemsObj instanceof Number n ? n.intValue()  : 0);
         } catch (Exception e) {
             System.err.println("SaleService.getTodaySummary: " + e.getMessage());
             return new TodaySummary(0, 0, 0);
@@ -88,10 +93,16 @@ public class SaleService {
         return invNo;
     }
 
-    /** Lists invoices for SalesHistoryPanel. */
+    /** Lists invoices for SalesHistoryPanel and FindInvoicePanel. */
     public List<InvoiceDto> listInvoices(String search, Date from, Date to, String paymentMethod) {
         try (var session = sf.openSession()) {
-            var q = session.createQuery("FROM Invoiceinfo ii ORDER BY ii.date DESC", Invoiceinfo.class)
+            var q = session.createQuery(
+                    "SELECT DISTINCT ii FROM Invoiceinfo ii " +
+                    "LEFT JOIN FETCH ii.employee " +
+                    "LEFT JOIN FETCH ii.invoices inv " +
+                    "LEFT JOIN FETCH inv.item " +
+                    "ORDER BY ii.date DESC",
+                    Invoiceinfo.class)
                     .setMaxResults(500).list();
             return q.stream()
                     .filter(ii -> matches(ii, search, from, to, paymentMethod))
@@ -105,8 +116,19 @@ public class SaleService {
 
     public InvoiceDto findByNumber(String invoiceNo) {
         try (var session = sf.openSession()) {
-            Invoiceinfo ii = session.get(Invoiceinfo.class, invoiceNo);
-            return ii != null ? toDto(ii) : null;
+            List<Invoiceinfo> list = session.createQuery(
+                    "SELECT DISTINCT ii FROM Invoiceinfo ii " +
+                    "LEFT JOIN FETCH ii.employee " +
+                    "LEFT JOIN FETCH ii.invoices inv " +
+                    "LEFT JOIN FETCH inv.item " +
+                    "WHERE ii.invoiceNo = :no",
+                    Invoiceinfo.class)
+                    .setParameter("no", invoiceNo)
+                    .list();
+            return list.isEmpty() ? null : toDto(list.get(0));
+        } catch (Exception e) {
+            System.err.println("SaleService.findByNumber: " + e.getMessage());
+            return null;
         }
     }
 

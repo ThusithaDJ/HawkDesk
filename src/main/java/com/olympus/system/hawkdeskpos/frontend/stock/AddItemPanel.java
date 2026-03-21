@@ -501,13 +501,38 @@ public class AddItemPanel extends JPanel {
             @Override protected void done() {
                 try {
                     get();
-                    JOptionPane.showMessageDialog(AddItemPanel.this, "Item saved successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
-                    Home.navigate(Home.CARD_STOCK);
+                    int res = JOptionPane.showConfirmDialog(AddItemPanel.this,
+                            "Item saved successfully.\n\nAdd another item?",
+                            "Saved", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+                    if (res == JOptionPane.YES_OPTION) {
+                        clearForm();
+                    } else {
+                        Home.navigate(Home.CARD_STOCK);
+                    }
                 } catch (Exception ex) {
                     warn("Failed to save: " + ex.getMessage());
                 }
             }
         }.execute();
+    }
+
+    private void clearForm() {
+        nameField.setText("");
+        unitField.setText("pcs");
+        costField.setText("");
+        priceField.setText("");
+        taxField.setText("0");
+        openingQtySpinner.setValue(0);
+        minLevelSpinner.setValue(5);
+        maxLevelSpinner.setValue(100);
+        statusCombo.setSelectedIndex(0);
+        if (catCombo.getItemCount() > 0)   catCombo.setSelectedIndex(0);
+        if (brandCombo.getItemCount() > 0) brandCombo.setSelectedIndex(0);
+        marginBar.setValue(0);
+        marginLabel.setText("0 %");
+        updatePreview();
+        generateSku();          // fresh SKU for the new item
+        nameField.requestFocusInWindow();
     }
 
     private void warn(String msg) {

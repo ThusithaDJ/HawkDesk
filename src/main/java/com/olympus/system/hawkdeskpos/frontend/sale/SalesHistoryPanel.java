@@ -10,6 +10,9 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.text.SimpleDateFormat;
+import java.time.DayOfWeek;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 
 /**
@@ -247,11 +250,22 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
                     if (summary != null) {
                         todayRevLabel.setText(String.format("Rs. %.2f", summary.revenue()));
                         txCountLabel.setText(String.valueOf(summary.transactions()));
-                        weekRevLabel.setText("—");
-                        returnsLabel.setText("—");
                     }
+                    // Compute week revenue and return count from loaded invoices
+                    LocalDate weekStart = LocalDate.now().with(DayOfWeek.MONDAY);
+                    double weekRev = allInvoices.stream()
+                            .filter(inv -> !"Void".equals(inv.stat()) && inv.date() != null)
+                            .filter(inv -> !inv.date().toInstant()
+                                    .atZone(ZoneId.systemDefault()).toLocalDate().isBefore(weekStart))
+                            .mapToDouble(InvoiceDto::total).sum();
+                    long returnCount = allInvoices.stream()
+                            .filter(inv -> "Return".equals(inv.stat())).count();
+                    weekRevLabel.setText(String.format("Rs. %.2f", weekRev));
+                    returnsLabel.setText(String.valueOf(returnCount));
                     populateTable(allInvoices);
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    System.err.println("SalesHistoryPanel.loadDataAsync: " + e.getMessage());
+                }
             }
         }.execute();
     }

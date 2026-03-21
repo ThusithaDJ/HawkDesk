@@ -158,7 +158,9 @@ public class LowStockPanel extends JPanel implements com.olympus.system.hawkdesk
                     items = get();
                     populateList();
                     updateStats();
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    System.err.println("LowStockPanel.loadDataAsync: " + e.getMessage());
+                }
             }
         }.execute();
     }

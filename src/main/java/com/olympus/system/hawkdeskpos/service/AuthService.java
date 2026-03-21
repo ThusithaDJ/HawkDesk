@@ -51,8 +51,8 @@ public class AuthService {
                 return new LoginOutcome(LoginResult.LOCKED, null, null);
             }
 
-//            boolean pinOk = BCrypt.checkpw(rawPin, emp.getPinHash());
-            boolean pinOk = emp.getPinHash().equals(rawPin);
+            boolean pinOk = BCrypt.checkpw(rawPin, emp.getPinHash());
+//            boolean pinOk = emp.getPinHash().equals(rawPin);
             Transaction tx = session.beginTransaction();
             if (pinOk) {
                 emp.setFailedAttempts(0);

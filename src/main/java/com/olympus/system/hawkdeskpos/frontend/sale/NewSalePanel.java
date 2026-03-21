@@ -13,15 +13,17 @@ import com.olympus.system.hawkdeskpos.session.SessionContext;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
-import java.awt.event.KeyAdapter;
-import java.awt.event.KeyEvent;
+import java.awt.event.*;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * New Sale screen.
- * SearchDropdown → cart table → payment panel → success overlay.
+ * New Sale screen with tab-based hold support.
+ * Each tab is a SaleSession (cart + payment state).
+ * Hold saves the current session and opens a new one.
+ * Void asks for confirmation before clearing.
  */
 public class NewSalePanel extends JPanel {
 
@@ -34,27 +36,207 @@ public class NewSalePanel extends JPanel {
     private final ItemService itemService;
     private final SaleService saleService;
 
-    private final List<ItemDto> cartItems = new ArrayList<>();
-    private final List<Integer> cartQtys  = new ArrayList<>();
-    private DefaultTableModel   cartModel;
-    private JTable              cartTable;
+    // ── Per-session state ─────────────────────────────────────────────────────
 
-    private JLabel     subtotalLabel, totalLabel, changeLabel;
-    private JTextField discountField, amountRecField;
+    private static class SaleSession {
+        final List<ItemDto> cartItems = new ArrayList<>();
+        final List<Integer> cartQtys  = new ArrayList<>();
+        String discount     = "0";
+        String paymentMethod = "CASH";
+        String amountRec    = "";
+        final String label;
+        SaleSession(int num) { this.label = "Sale " + num; }
+    }
+
+    private final List<SaleSession> sessions = new ArrayList<>();
+    private int activeIdx = 0;
+
+    // ── UI references (reflect the active session) ────────────────────────────
+
+    private List<ItemDto> cartItems;   // alias → active session's list
+    private List<Integer> cartQtys;    // alias → active session's list
+    private DefaultTableModel cartModel;
+    private JTable            cartTable;
+
+    private JLabel        subtotalLabel, totalLabel, changeLabel;
+    private JTextField    discountField, amountRecField;
     private JToggleButton btnCash, btnCard, btnCredit;
-    private String     paymentMethod = "CASH";
+    private String        paymentMethod = "CASH";
 
     // Inline search
     private JTextField searchField;
     private JPanel     resultsPanel;
     private Timer      searchDebounce;
 
-    public NewSalePanel(ItemService itemService, SaleService saleService, SettingsService settingsService) {
+    // Session tab strip
+    private JPanel sessionStrip;
+    private int    sessionCounter = 1;
+
+    public NewSalePanel(ItemService itemService, SaleService saleService, SettingsService ignored) {
         this.itemService = itemService;
         this.saleService = saleService;
         setBackground(BG);
         setLayout(new BorderLayout());
+
+        SaleSession first = new SaleSession(sessionCounter);
+        sessions.add(first);
+        cartItems = first.cartItems;
+        cartQtys  = first.cartQtys;
+
         buildUI();
+    }
+
+    // ── Session management ────────────────────────────────────────────────────
+
+    private void saveActiveSession() {
+        SaleSession s = sessions.get(activeIdx);
+        s.discount      = discountField.getText();
+        s.paymentMethod = paymentMethod;
+        s.amountRec     = amountRecField.getText();
+        // cartItems / cartQtys are already the session's own lists — no copy needed
+    }
+
+    private void loadActiveSession() {
+        SaleSession s = sessions.get(activeIdx);
+        cartItems = s.cartItems;
+        cartQtys  = s.cartQtys;
+        paymentMethod = s.paymentMethod;
+
+        cartModel.setRowCount(0);
+        for (int i = 0; i < s.cartItems.size(); i++) {
+            ItemDto item = s.cartItems.get(i);
+            int     qty  = s.cartQtys.get(i);
+            cartModel.addRow(new Object[]{
+                    item.itemName(), item.sku(), qty,
+                    String.format("%.2f", item.sellingPrice()),
+                    String.format("%.2f", item.sellingPrice() * qty), "✕"
+            });
+        }
+
+        discountField.setText(s.discount);
+        amountRecField.setText(s.amountRec);
+        switch (s.paymentMethod) {
+            case "CASH"   -> { if (btnCash   != null) btnCash.setSelected(true); }
+            case "CARD"   -> { if (btnCard   != null) btnCard.setSelected(true); }
+            case "CREDIT" -> { if (btnCredit != null) btnCredit.setSelected(true); }
+        }
+        updateTotals();
+    }
+
+    private void switchSession(int newIdx) {
+        if (newIdx == activeIdx) return;
+        saveActiveSession();
+        activeIdx = newIdx;
+        loadActiveSession();
+        rebuildSessionStrip();
+    }
+
+    private void holdCurrentSale() {
+        if (cartItems.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "Cart is empty — nothing to hold.", "Hold", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+        saveActiveSession();
+        sessionCounter++;
+        SaleSession next = new SaleSession(sessionCounter);
+        sessions.add(next);
+        activeIdx = sessions.size() - 1;
+        cartItems = next.cartItems;
+        cartQtys  = next.cartQtys;
+        paymentMethod = "CASH";
+        cartModel.setRowCount(0);
+        discountField.setText("0");
+        amountRecField.setText("");
+        if (btnCash != null) btnCash.setSelected(true);
+        updateTotals();
+        rebuildSessionStrip();
+    }
+
+    private void voidCurrentSale() {
+        int res = JOptionPane.showConfirmDialog(this,
+                "Void this sale and clear all items?",
+                "Void Sale", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (res != JOptionPane.YES_OPTION) return;
+
+        if (sessions.size() > 1) {
+            // Remove this tab and switch to the previous one
+            sessions.remove(activeIdx);
+            if (activeIdx >= sessions.size()) activeIdx = sessions.size() - 1;
+            cartItems = sessions.get(activeIdx).cartItems;
+            cartQtys  = sessions.get(activeIdx).cartQtys;
+            loadActiveSession();
+        } else {
+            resetCart();
+        }
+        rebuildSessionStrip();
+    }
+
+    private void closeSession(int idx) {
+        SaleSession s = sessions.get(idx);
+        if (!s.cartItems.isEmpty()) {
+            int res = JOptionPane.showConfirmDialog(this,
+                    "Discard \"" + s.label + "\"? All items will be lost.",
+                    "Close Tab", JOptionPane.YES_NO_OPTION);
+            if (res != JOptionPane.YES_OPTION) return;
+        }
+        sessions.remove(idx);
+        if (activeIdx >= sessions.size()) activeIdx = sessions.size() - 1;
+        cartItems = sessions.get(activeIdx).cartItems;
+        cartQtys  = sessions.get(activeIdx).cartQtys;
+        loadActiveSession();
+        rebuildSessionStrip();
+    }
+
+    private void rebuildSessionStrip() {
+        sessionStrip.removeAll();
+        for (int i = 0; i < sessions.size(); i++) {
+            final int idx = i;
+            SaleSession s = sessions.get(i);
+            boolean active = (i == activeIdx);
+
+            JPanel tab = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0)) {
+                @Override protected void paintComponent(Graphics g) {
+                    Graphics2D g2 = (Graphics2D) g.create();
+                    g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                    g2.setColor(active ? Color.WHITE : new Color(0xE2, 0xE5, 0xEA));
+                    g2.fillRoundRect(0, 0, getWidth(), getHeight(), 8, 8);
+                    g2.setColor(new Color(0xC8, 0xCC, 0xD5));
+                    g2.drawRoundRect(0, 0, getWidth() - 1, getHeight() - 1, 8, 8);
+                    g2.dispose();
+                }
+            };
+            tab.setOpaque(false);
+            tab.setBorder(new EmptyBorder(4, 10, 4, 6));
+            tab.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+
+            JLabel lbl = new JLabel(s.label);
+            lbl.setFont(lbl.getFont().deriveFont(active ? Font.BOLD : Font.PLAIN, 12f));
+            lbl.setForeground(active ? NAVY : TEXT2);
+            lbl.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            tab.add(lbl);
+
+            if (sessions.size() > 1) {
+                JLabel close = new JLabel("  ×");
+                close.setFont(close.getFont().deriveFont(Font.BOLD, 12f));
+                close.setForeground(TEXT2);
+                close.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+                close.addMouseListener(new MouseAdapter() {
+                    @Override public void mouseClicked(MouseEvent e) { e.consume(); closeSession(idx); }
+                });
+                tab.add(close);
+            }
+
+            MouseAdapter tabClick = new MouseAdapter() {
+                @Override public void mouseClicked(MouseEvent e) { switchSession(idx); }
+            };
+            tab.addMouseListener(tabClick);
+            lbl.addMouseListener(tabClick);
+
+            sessionStrip.add(tab);
+        }
+        sessionStrip.revalidate();
+        sessionStrip.repaint();
     }
 
     public void resetCart() {
@@ -63,13 +245,22 @@ public class NewSalePanel extends JPanel {
         cartModel.setRowCount(0);
         discountField.setText("0");
         amountRecField.setText("");
+        paymentMethod = "CASH";
+        if (btnCash != null) btnCash.setSelected(true);
         updateTotals();
     }
 
+    // ── UI construction ───────────────────────────────────────────────────────
+
     private void buildUI() {
-        JPanel root = new JPanel(new BorderLayout(14, 0));
+        JPanel root = new JPanel(new BorderLayout(0, 8));
         root.setOpaque(false);
         root.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        // ── North: header + session strip ─────────────────────────────────────
+        JPanel north = new JPanel();
+        north.setOpaque(false);
+        north.setLayout(new BoxLayout(north, BoxLayout.Y_AXIS));
 
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
@@ -82,8 +273,17 @@ public class NewSalePanel extends JPanel {
         hBtns.setOpaque(false);
         hBtns.add(back);
         header.add(hBtns, BorderLayout.EAST);
-        root.add(header, BorderLayout.NORTH);
+        north.add(header);
+        north.add(Box.createVerticalStrut(6));
 
+        sessionStrip = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        sessionStrip.setOpaque(false);
+        rebuildSessionStrip();
+        north.add(sessionStrip);
+
+        root.add(north, BorderLayout.NORTH);
+
+        // ── Centre: search+cart | payment ─────────────────────────────────────
         JPanel content = new JPanel(new BorderLayout(14, 0));
         content.setOpaque(false);
 
@@ -99,13 +299,14 @@ public class NewSalePanel extends JPanel {
         add(root);
     }
 
+    // ── Search section ────────────────────────────────────────────────────────
+
     private JPanel buildSearchSection() {
         JPanel wrapper = new JPanel(new BorderLayout(0, 0));
         wrapper.setOpaque(false);
 
-        // ── Search bar ────────────────────────────────────────────────────────
         CardPanel bar = new CardPanel(new BorderLayout(8, 0));
-        ((JPanel)bar).setBorder(new EmptyBorder(10, 14, 10, 14));
+        ((JPanel) bar).setBorder(new EmptyBorder(10, 14, 10, 14));
 
         JLabel hint = new JLabel("Search item by name or SKU:");
         hint.setForeground(TEXT2);
@@ -130,23 +331,20 @@ public class NewSalePanel extends JPanel {
             }
         });
 
-        ((JPanel)bar).add(hint,        BorderLayout.WEST);
-        ((JPanel)bar).add(searchField, BorderLayout.CENTER);
+        ((JPanel) bar).add(hint,        BorderLayout.WEST);
+        ((JPanel) bar).add(searchField, BorderLayout.CENTER);
         wrapper.add(bar, BorderLayout.NORTH);
 
-        // ── Inline results panel (hidden until results arrive) ────────────────
         resultsPanel = new JPanel();
         resultsPanel.setLayout(new BoxLayout(resultsPanel, BoxLayout.Y_AXIS));
         resultsPanel.setBackground(Color.WHITE);
 
-        // Scroll container — max 5 rows tall (54 px each + padding)
         JScrollPane resultScroll = new JScrollPane(resultsPanel);
         resultScroll.setBorder(BorderFactory.createMatteBorder(0, 1, 1, 1, new Color(0xC8, 0xCD, 0xD6)));
         resultScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54 * 5 + 8));
         resultScroll.setPreferredSize(new Dimension(0, 54 * 5 + 8));
         resultScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         resultScroll.setVisible(false);
-        // Keep resultsPanel ref but track visibility on the scroll pane
         resultsPanel.putClientProperty("scrollPane", resultScroll);
 
         wrapper.add(resultScroll, BorderLayout.CENTER);
@@ -197,7 +395,6 @@ public class NewSalePanel extends JPanel {
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54));
         row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
-        // Left: name + sku · category
         JPanel left = new JPanel(new GridLayout(2, 1, 0, 2));
         left.setOpaque(false);
         JLabel nameLbl = new JLabel(item.itemName());
@@ -209,7 +406,6 @@ public class NewSalePanel extends JPanel {
         left.add(subLbl);
         row.add(left, BorderLayout.CENTER);
 
-        // Right: stock pill + price
         JPanel right = new JPanel(new GridLayout(2, 1, 0, 2));
         right.setOpaque(false);
         StatusPill pill = StatusPill.forStatus(item.stockStatus());
@@ -222,14 +418,15 @@ public class NewSalePanel extends JPanel {
         right.add(priceLbl);
         row.add(right, BorderLayout.EAST);
 
-        // Hover highlight
-        row.addMouseListener(new java.awt.event.MouseAdapter() {
-            @Override public void mouseEntered(java.awt.event.MouseEvent e) { row.setBackground(new Color(0xF7, 0xF8, 0xFA)); }
-            @Override public void mouseExited(java.awt.event.MouseEvent e)  { row.setBackground(Color.WHITE); }
-            @Override public void mouseClicked(java.awt.event.MouseEvent e) { addToCart(item); clearResults(); }
-        });
+        MouseAdapter rowClick = new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { row.setBackground(new Color(0xF7, 0xF8, 0xFA)); }
+            @Override public void mouseExited(MouseEvent e)  { row.setBackground(Color.WHITE); }
+            @Override public void mouseClicked(MouseEvent e) { addToCart(item); clearResults(); }
+        };
+        row.addMouseListener(rowClick);
+        left.addMouseListener(rowClick);
+        right.addMouseListener(rowClick);
 
-        // Keyboard select when row gains focus
         row.setFocusable(true);
         row.addKeyListener(new KeyAdapter() {
             @Override public void keyPressed(KeyEvent e) {
@@ -237,7 +434,6 @@ public class NewSalePanel extends JPanel {
                 if (e.getKeyCode() == KeyEvent.VK_ESCAPE) { clearResults(); searchField.requestFocusInWindow(); }
             }
         });
-
         return row;
     }
 
@@ -253,23 +449,14 @@ public class NewSalePanel extends JPanel {
             resultsPanel.getComponent(0).requestFocusInWindow();
     }
 
+    // ── Cart section ──────────────────────────────────────────────────────────
+
     private JPanel buildCartSection() {
         String[] cols = {"Item Name", "SKU", "Qty", "Unit Price (Rs.)", "Total (Rs.)", ""};
         cartModel = new DefaultTableModel(cols, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return c == 2; }
+            @Override public boolean isCellEditable(int r, int c) { return false; }
             @Override public Class<?> getColumnClass(int c) { return c == 2 ? Integer.class : String.class; }
         };
-        cartModel.addTableModelListener(e -> {
-            int row = e.getFirstRow(); int col = e.getColumn();
-            if (col == 2 && row >= 0 && row < cartQtys.size()) {
-                Object val = cartModel.getValueAt(row, 2);
-                int qty = Math.max(1, val instanceof Number n ? n.intValue() : 1);
-                cartQtys.set(row, qty);
-                double price = cartItems.get(row).sellingPrice();
-                cartModel.setValueAt(String.format("%.2f", price * qty), row, 4);
-                updateTotals();
-            }
-        });
 
         cartTable = new JTable(cartModel);
         cartTable.setRowHeight(40);
@@ -278,23 +465,52 @@ public class NewSalePanel extends JPanel {
         cartTable.getTableHeader().setFont(cartTable.getFont().deriveFont(Font.BOLD, 12f));
         cartTable.getTableHeader().setBackground(new Color(0xF7, 0xF8, 0xFA));
         cartTable.getTableHeader().setForeground(TEXT2);
-        cartTable.getColumnModel().getColumn(5).setMaxWidth(60);
-        cartTable.getColumnModel().getColumn(2).setMaxWidth(80);
+        cartTable.getColumnModel().getColumn(5).setMaxWidth(48);
+        cartTable.getColumnModel().getColumn(5).setMinWidth(48);
+        cartTable.getColumnModel().getColumn(2).setPreferredWidth(100);
+        cartTable.getColumnModel().getColumn(2).setMinWidth(90);
 
+        // Qty column: custom [-] qty [+] renderer
+        cartTable.getColumnModel().getColumn(2).setCellRenderer(new QtyButtonRenderer());
+
+        // Remove (✕) column renderer
         cartTable.getColumn("").setCellRenderer((table, value, isSel, hasFocus, row, col) -> {
             JButton btn = new JButton("✕");
             btn.setForeground(RED);
             btn.setBorderPainted(false);
             btn.setContentAreaFilled(false);
+            btn.setFocusPainted(false);
             return btn;
         });
-        cartTable.getColumn("").setCellEditor(new DefaultCellEditor(new JCheckBox()) {
-            @Override public boolean isCellEditable(java.util.EventObject e) {
-                if (e instanceof java.awt.event.MouseEvent me) {
-                    int row = cartTable.rowAtPoint(me.getPoint());
-                    if (row >= 0) removeFromCart(row);
+
+        // Single mouse listener handles both qty +/- clicks and remove-row clicks
+        cartTable.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                int col = cartTable.columnAtPoint(e.getPoint());
+                int row = cartTable.rowAtPoint(e.getPoint());
+                if (row < 0) return;
+
+                if (col == 2) {  // qty column
+                    Rectangle cell = cartTable.getCellRect(row, col, false);
+                    int relX = e.getX() - cell.x;
+                    if (relX <= 30) {
+                        adjustQty(row, -1);
+                    } else if (relX >= cell.width - 30) {
+                        adjustQty(row, +1);
+                    } else {
+                        // Click on the number — prompt for direct entry
+                        String input = JOptionPane.showInputDialog(
+                                NewSalePanel.this, "Enter quantity:", cartQtys.get(row));
+                        if (input != null) {
+                            try {
+                                int qty = Math.max(1, Integer.parseInt(input.trim()));
+                                adjustQty(row, qty - cartQtys.get(row));
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                } else if (col == cartModel.getColumnCount() - 1) {  // ✕ column
+                    removeFromCart(row);
                 }
-                return false;
             }
         });
 
@@ -310,12 +526,29 @@ public class NewSalePanel extends JPanel {
         t.setForeground(TEXT2);
         headerRow.add(t, BorderLayout.WEST);
         JButton clearAll = new JButton("Clear All");
-        clearAll.addActionListener(e -> resetCart());
+        clearAll.addActionListener(e -> {
+            if (cartItems.isEmpty()) return;
+            int res = JOptionPane.showConfirmDialog(this, "Clear all items from cart?",
+                    "Clear Cart", JOptionPane.YES_NO_OPTION);
+            if (res == JOptionPane.YES_OPTION) resetCart();
+        });
         headerRow.add(clearAll, BorderLayout.EAST);
-        ((JPanel)c).add(headerRow, BorderLayout.NORTH);
-        ((JPanel)c).add(scroll,    BorderLayout.CENTER);
+        ((JPanel) c).add(headerRow, BorderLayout.NORTH);
+        ((JPanel) c).add(scroll,    BorderLayout.CENTER);
         return c;
     }
+
+    private void adjustQty(int row, int delta) {
+        if (row < 0 || row >= cartQtys.size()) return;
+        int newQty = Math.max(1, cartQtys.get(row) + delta);
+        cartQtys.set(row, newQty);
+        cartModel.setValueAt(newQty, row, 2);
+        double price = cartItems.get(row).sellingPrice();
+        cartModel.setValueAt(String.format("%.2f", price * newQty), row, 4);
+        updateTotals();
+    }
+
+    // ── Payment panel ─────────────────────────────────────────────────────────
 
     private JPanel buildPaymentPanel() {
         JPanel panel = new JPanel();
@@ -324,15 +557,15 @@ public class NewSalePanel extends JPanel {
         panel.setPreferredSize(new Dimension(300, 0));
 
         CardPanel c = new CardPanel(new BorderLayout(0, 0));
-        ((JPanel)c).setBorder(new EmptyBorder(14, 14, 14, 14));
-        ((JPanel)c).setLayout(new BoxLayout((JPanel)c, BoxLayout.Y_AXIS));
+        ((JPanel) c).setBorder(new EmptyBorder(14, 14, 14, 14));
+        ((JPanel) c).setLayout(new BoxLayout((JPanel) c, BoxLayout.Y_AXIS));
 
         JLabel t = new JLabel("PAYMENT");
         t.setFont(t.getFont().deriveFont(Font.BOLD, 11f));
         t.setForeground(TEXT2);
         t.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ((JPanel)c).add(t);
-        ((JPanel)c).add(Box.createVerticalStrut(12));
+        ((JPanel) c).add(t);
+        ((JPanel) c).add(Box.createVerticalStrut(12));
 
         subtotalLabel = new JLabel("Rs. 0.00");
         totalLabel    = new JLabel("Rs. 0.00");
@@ -346,38 +579,34 @@ public class NewSalePanel extends JPanel {
         rows.add(lbl("Subtotal")); rows.add(subtotalLabel);
 
         discountField = new JTextField("0");
-        discountField.getDocument().addDocumentListener(docListener(() -> updateTotals()));
+        discountField.getDocument().addDocumentListener(docListener(this::updateTotals));
         rows.add(lbl("Discount (Rs.)")); rows.add(discountField);
         rows.add(lbl("TOTAL"));          rows.add(totalLabel);
+        ((JPanel) c).add(rows);
+        ((JPanel) c).add(Box.createVerticalStrut(12));
+        ((JPanel) c).add(new JSeparator());
+        ((JPanel) c).add(Box.createVerticalStrut(12));
 
-        ((JPanel)c).add(rows);
-        ((JPanel)c).add(Box.createVerticalStrut(12));
-        ((JPanel)c).add(new JSeparator());
-        ((JPanel)c).add(Box.createVerticalStrut(12));
-
-        // Payment method
         JLabel pmLabel = new JLabel("Payment Method");
         pmLabel.setForeground(TEXT2);
         pmLabel.setFont(pmLabel.getFont().deriveFont(12f));
         pmLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ((JPanel)c).add(pmLabel);
-        ((JPanel)c).add(Box.createVerticalStrut(6));
-        ((JPanel)c).add(buildPaymentToggle());
-        ((JPanel)c).add(Box.createVerticalStrut(12));
+        ((JPanel) c).add(pmLabel);
+        ((JPanel) c).add(Box.createVerticalStrut(6));
+        ((JPanel) c).add(buildPaymentToggle());
+        ((JPanel) c).add(Box.createVerticalStrut(12));
 
-        // Quick tender
         JLabel qlabel = new JLabel("Quick Tender");
         qlabel.setForeground(TEXT2);
         qlabel.setFont(qlabel.getFont().deriveFont(12f));
         qlabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        ((JPanel)c).add(qlabel);
-        ((JPanel)c).add(Box.createVerticalStrut(6));
-        ((JPanel)c).add(buildQuickTender());
-        ((JPanel)c).add(Box.createVerticalStrut(12));
+        ((JPanel) c).add(qlabel);
+        ((JPanel) c).add(Box.createVerticalStrut(6));
+        ((JPanel) c).add(buildQuickTender());
+        ((JPanel) c).add(Box.createVerticalStrut(12));
 
-        // Amount received + change
         amountRecField = new JTextField();
-        amountRecField.getDocument().addDocumentListener(docListener(() -> updateChange()));
+        amountRecField.getDocument().addDocumentListener(docListener(this::updateChange));
         changeLabel = new JLabel("Rs. 0.00");
         changeLabel.setFont(changeLabel.getFont().deriveFont(Font.BOLD, 16f));
         changeLabel.setForeground(GREEN);
@@ -387,9 +616,9 @@ public class NewSalePanel extends JPanel {
         rcvRow.setAlignmentX(Component.LEFT_ALIGNMENT);
         rcvRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 70));
         rcvRow.add(lbl("Amount Received (Rs.)")); rcvRow.add(amountRecField);
-        rcvRow.add(lbl("Change"));               rcvRow.add(changeLabel);
-        ((JPanel)c).add(rcvRow);
-        ((JPanel)c).add(Box.createVerticalStrut(16));
+        rcvRow.add(lbl("Change"));                rcvRow.add(changeLabel);
+        ((JPanel) c).add(rcvRow);
+        ((JPanel) c).add(Box.createVerticalStrut(16));
 
         JButton chargeBtn = new JButton("CHARGE");
         chargeBtn.setBackground(GREEN);
@@ -400,19 +629,24 @@ public class NewSalePanel extends JPanel {
         chargeBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
         chargeBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 48));
         chargeBtn.addActionListener(e -> chargeSale());
-        ((JPanel)c).add(chargeBtn);
-        ((JPanel)c).add(Box.createVerticalStrut(8));
+        ((JPanel) c).add(chargeBtn);
+        ((JPanel) c).add(Box.createVerticalStrut(8));
 
         JPanel secondary = new JPanel(new GridLayout(1, 2, 8, 0));
         secondary.setOpaque(false);
         secondary.setAlignmentX(Component.LEFT_ALIGNMENT);
         secondary.setMaximumSize(new Dimension(Integer.MAX_VALUE, 36));
+
+        JButton holdBtn = new JButton("Hold");
+        holdBtn.addActionListener(e -> holdCurrentSale());
+
         JButton voidBtn = new JButton("Void");
         voidBtn.setForeground(RED);
-        voidBtn.addActionListener(e -> resetCart());
-        secondary.add(new JButton("Hold"));
+        voidBtn.addActionListener(e -> voidCurrentSale());
+
+        secondary.add(holdBtn);
         secondary.add(voidBtn);
-        ((JPanel)c).add(secondary);
+        ((JPanel) c).add(secondary);
 
         panel.add(c);
         return panel;
@@ -455,14 +689,12 @@ public class NewSalePanel extends JPanel {
         return p;
     }
 
+    // ── Cart logic ────────────────────────────────────────────────────────────
+
     private void addToCart(ItemDto item) {
         for (int i = 0; i < cartItems.size(); i++) {
             if (cartItems.get(i).itemId() == item.itemId()) {
-                int nq = cartQtys.get(i) + 1;
-                cartQtys.set(i, nq);
-                cartModel.setValueAt(nq, i, 2);
-                cartModel.setValueAt(String.format("%.2f", item.sellingPrice() * nq), i, 4);
-                updateTotals();
+                adjustQty(i, +1);
                 return;
             }
         }
@@ -506,6 +738,8 @@ public class NewSalePanel extends JPanel {
         } catch (Exception ignored) {}
     }
 
+    // ── Charge / success ──────────────────────────────────────────────────────
+
     private void chargeSale() {
         if (cartItems.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Cart is empty.", "Error", JOptionPane.WARNING_MESSAGE);
@@ -517,11 +751,13 @@ public class NewSalePanel extends JPanel {
                 double total = parseCurrency(totalLabel.getText());
                 amountPaid   = Double.parseDouble(amountRecField.getText().trim());
                 if (amountPaid < total) {
-                    JOptionPane.showMessageDialog(this, "Amount received is less than total.", "Error", JOptionPane.WARNING_MESSAGE);
+                    JOptionPane.showMessageDialog(this,
+                            "Amount received is less than total.", "Error", JOptionPane.WARNING_MESSAGE);
                     return;
                 }
             } catch (Exception e) {
-                JOptionPane.showMessageDialog(this, "Enter amount received.", "Error", JOptionPane.WARNING_MESSAGE);
+                JOptionPane.showMessageDialog(this,
+                        "Enter amount received.", "Error", JOptionPane.WARNING_MESSAGE);
                 return;
             }
         }
@@ -617,6 +853,40 @@ public class NewSalePanel extends JPanel {
         overlay.add(panel);
         overlay.setVisible(true);
     }
+
+    // ── Qty button renderer ───────────────────────────────────────────────────
+
+    private static class QtyButtonRenderer extends JPanel implements TableCellRenderer {
+        private final JButton minus = new JButton("−");
+        private final JLabel  value = new JLabel("1", SwingConstants.CENTER);
+        private final JButton plus  = new JButton("+");
+
+        QtyButtonRenderer() {
+            setLayout(new BorderLayout(2, 0));
+            setBorder(new EmptyBorder(4, 4, 4, 4));
+            minus.setFont(minus.getFont().deriveFont(Font.BOLD, 12f));
+            minus.setFocusPainted(false);
+            minus.setPreferredSize(new Dimension(28, 26));
+            plus.setFont(plus.getFont().deriveFont(Font.BOLD, 12f));
+            plus.setFocusPainted(false);
+            plus.setPreferredSize(new Dimension(28, 26));
+            value.setFont(value.getFont().deriveFont(Font.BOLD, 13f));
+            add(minus, BorderLayout.WEST);
+            add(value, BorderLayout.CENTER);
+            add(plus,  BorderLayout.EAST);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table, Object val, boolean isSel, boolean hasFocus, int row, int col) {
+            value.setText(val != null ? val.toString() : "1");
+            setBackground(isSel ? table.getSelectionBackground() : table.getBackground());
+            setOpaque(true);
+            return this;
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private JLabel lbl(String text) {
         JLabel l = new JLabel(text);

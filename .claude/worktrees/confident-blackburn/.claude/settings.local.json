@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C \"D:\\\\Dev\\\\Workspaces\\\\NetBeans\\\\Products\\\\HawkDesk\\\\HawkDeskPOS\" worktree prune)",
+      "Bash(git -C \"D:\\\\Dev\\\\Workspaces\\\\NetBeans\\\\Products\\\\HawkDesk\\\\HawkDeskPOS\" worktree list)",
+      "Bash(git -C \"D:\\\\Dev\\\\Workspaces\\\\NetBeans\\\\Products\\\\HawkDesk\\\\HawkDeskPOS\" rm -r --cached target/)",
+      "Bash(git -C \"D:\\\\Dev\\\\Workspaces\\\\NetBeans\\\\Products\\\\HawkDesk\\\\HawkDeskPOS\" add .gitignore)",
+      "Bash(git -C \"D:\\\\Dev\\\\Workspaces\\\\NetBeans\\\\Products\\\\HawkDesk\\\\HawkDeskPOS\" status --short)",
+      "Bash(git -C \"D:\\\\Dev\\\\Workspaces\\\\NetBeans\\\\Products\\\\HawkDesk\\\\HawkDeskPOS\" diff src/main/java/com/olympus/system/hawkdeskpos/service/AuthService.java src/main/resources/hibernate.cfg.xml)",
+      "Bash(git -C \"D:\\\\Dev\\\\Workspaces\\\\NetBeans\\\\Products\\\\HawkDesk\\\\HawkDeskPOS\" add src/main/java/com/olympus/system/hawkdeskpos/service/AuthService.java src/main/resources/hibernate.cfg.xml)",
+      "Bash(git -C:*)",
+      "Bash(mvn compile:*)"
+    ]
+  }
+}

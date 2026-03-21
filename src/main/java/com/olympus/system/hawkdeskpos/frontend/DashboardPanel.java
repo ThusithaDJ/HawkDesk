@@ -42,6 +42,10 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
     private JTextArea notesArea;
     private JLabel lowBadge;
 
+    // Rebuilt on each refresh so permission checks run after login
+    private JPanel mainColumn;
+    private CardPanel linksCard;
+
     public DashboardPanel(ItemService itemService, SaleService saleService, SettingsService settings) {
         this.itemService = itemService;
         this.saleService = saleService;
@@ -52,6 +56,8 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
     }
 
     public void refresh() {
+        rebuildMainColumn();
+        rebuildLinksCard();
         loadDataAsync();
     }
 
@@ -60,44 +66,10 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
         content.setOpaque(false);
         content.setBorder(new EmptyBorder(16, 16, 16, 16));
 
-        // ── Main column ───────────────────────────────────────────────────────
-        JPanel main = new JPanel();
-        main.setOpaque(false);
-        main.setLayout(new BoxLayout(main, BoxLayout.Y_AXIS));
-
-        // Hero: New Sale
-        JButton heroBtn = makeHeroButton("NEW SALE",
-                "Start a new sales transaction", Home.CARD_SALE);
-        heroBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
-        heroBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
-        main.add(heroBtn);
-        main.add(Box.createVerticalStrut(14));
-
-        // Stock grid 2x2
-        JPanel stockGrid = new JPanel(new GridLayout(2, 2, 10, 10));
-        stockGrid.setOpaque(false);
-        stockGrid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 160));
-        stockGrid.setAlignmentX(Component.LEFT_ALIGNMENT);
-
-        stockGrid.add(gridTile("View Stock",         "All inventory items",       Home.CARD_STOCK,     "#1E3A5F", Permission.VIEW_STOCK));
-        JPanel lowTile = gridTileWithBadge("Low Stock Alerts",  "Items needing attention",   Home.CARD_LOW_STOCK, "#E65100", Permission.VIEW_STOCK);
-        stockGrid.add(lowTile);
-        stockGrid.add(gridTile("Receive Stock (GRN)","Record new stock delivery", Home.CARD_RECEIVE,   "#2E7D32", Permission.RECEIVE_STOCK));
-        stockGrid.add(gridTile("Add New Item",       "Register a new product",    Home.CARD_ADD_ITEM,  "#185FA5", Permission.ADD_ITEM));
-        main.add(stockGrid);
-        main.add(Box.createVerticalStrut(14));
-
-        // Sales grid 1x3
-        JPanel salesGrid = new JPanel(new GridLayout(1, 3, 10, 0));
-        salesGrid.setOpaque(false);
-        salesGrid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
-        salesGrid.setAlignmentX(Component.LEFT_ALIGNMENT);
-        salesGrid.add(gridTile("Sales History", "Past transactions",    Home.CARD_HIST,    "#283593", Permission.VIEW_SALES));
-        salesGrid.add(gridTile("Reports",       "Insights & analytics", Home.CARD_REPORTS, "#4A148C", Permission.VIEW_REPORTS));
-        salesGrid.add(gridTile("Find Invoice",  "Search by invoice #",  Home.CARD_FIND_INV, "#006064", Permission.FIND_INVOICE));
-        main.add(salesGrid);
-
-        content.add(main, BorderLayout.CENTER);
+        mainColumn = new JPanel(new BorderLayout());
+        mainColumn.setOpaque(false);
+        rebuildMainColumn();
+        content.add(mainColumn, BorderLayout.CENTER);
 
         // ── Right sidebar ─────────────────────────────────────────────────────
         JPanel sidebar = new JPanel();
@@ -122,6 +94,50 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
 
         add(content);
         loadDataAsync();
+    }
+
+    // ── Main column (rebuilt on every refresh so permissions are current) ──────
+
+    private void rebuildMainColumn() {
+        mainColumn.removeAll();
+
+        JPanel main = new JPanel();
+        main.setOpaque(false);
+        main.setLayout(new BoxLayout(main, BoxLayout.Y_AXIS));
+
+        // Hero: New Sale (always visible — everyone can see it)
+        JButton heroBtn = makeHeroButton("NEW SALE",
+                "Start a new sales transaction", Home.CARD_SALE);
+        heroBtn.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        heroBtn.setAlignmentX(Component.LEFT_ALIGNMENT);
+        main.add(heroBtn);
+        main.add(Box.createVerticalStrut(14));
+
+        // Stock grid 2x2
+        JPanel stockGrid = new JPanel(new GridLayout(2, 2, 10, 10));
+        stockGrid.setOpaque(false);
+        stockGrid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 160));
+        stockGrid.setAlignmentX(Component.LEFT_ALIGNMENT);
+        stockGrid.add(gridTile("View Stock",          "All inventory items",       Home.CARD_STOCK,     "#1E3A5F", Permission.VIEW_STOCK));
+        stockGrid.add(gridTileWithBadge("Low Stock Alerts", "Items needing attention", Home.CARD_LOW_STOCK, "#E65100", Permission.VIEW_STOCK));
+        stockGrid.add(gridTile("Receive Stock (GRN)", "Record new stock delivery", Home.CARD_RECEIVE,   "#2E7D32", Permission.RECEIVE_STOCK));
+        stockGrid.add(gridTile("Add New Item",         "Register a new product",   Home.CARD_ADD_ITEM,  "#185FA5", Permission.ADD_ITEM));
+        main.add(stockGrid);
+        main.add(Box.createVerticalStrut(14));
+
+        // Sales grid 1x3
+        JPanel salesGrid = new JPanel(new GridLayout(1, 3, 10, 0));
+        salesGrid.setOpaque(false);
+        salesGrid.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        salesGrid.setAlignmentX(Component.LEFT_ALIGNMENT);
+        salesGrid.add(gridTile("Sales History", "Past transactions",    Home.CARD_HIST,     "#283593", Permission.VIEW_SALES));
+        salesGrid.add(gridTile("Reports",       "Insights & analytics", Home.CARD_REPORTS,  "#4A148C", Permission.VIEW_REPORTS));
+        salesGrid.add(gridTile("Find Invoice",  "Search by invoice #",  Home.CARD_FIND_INV, "#006064", Permission.FIND_INVOICE));
+        main.add(salesGrid);
+
+        mainColumn.add(main, BorderLayout.CENTER);
+        mainColumn.revalidate();
+        mainColumn.repaint();
     }
 
     // ── Hero button ───────────────────────────────────────────────────────────
@@ -163,6 +179,7 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
             empty.setOpaque(false);
             return empty;
         }
+
         CardPanel tile = new CardPanel(new BorderLayout());
         tile.setBorder(new EmptyBorder(16, 16, 16, 16));
         tile.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
@@ -179,9 +196,15 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
         info.add(t);
         info.add(s);
         tile.add(info, BorderLayout.CENTER);
-        tile.addMouseListener(new java.awt.event.MouseAdapter() {
+
+        java.awt.event.MouseAdapter click = new java.awt.event.MouseAdapter() {
             @Override public void mouseClicked(java.awt.event.MouseEvent e) { Home.navigate(card); }
-        });
+        };
+        tile.addMouseListener(click);
+        info.addMouseListener(click);
+        t.addMouseListener(click);
+        s.addMouseListener(click);
+
         return tile;
     }
 
@@ -273,12 +296,20 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
     }
 
     private CardPanel buildLinksCard() {
-        CardPanel c = new CardPanel(new GridLayout(3, 1, 0, 0));
-        c.setBorder(new EmptyBorder(0, 0, 0, 0));
-        c.add(link("Settings",        Home.CARD_SETTINGS, Permission.ACCESS_SETTINGS));
-        c.add(link("User Management", Home.CARD_USERS,    Permission.MANAGE_USERS));
-        c.add(link("Backup & Restore",Home.CARD_BACKUP,   Permission.ACCESS_BACKUP));
-        return c;
+        linksCard = new CardPanel(new GridLayout(3, 1, 0, 0));
+        linksCard.setBorder(new EmptyBorder(0, 0, 0, 0));
+        // Populated by rebuildLinksCard() called from refresh() after login
+        return linksCard;
+    }
+
+    private void rebuildLinksCard() {
+        if (linksCard == null) return;
+        linksCard.removeAll();
+        linksCard.add(link("Settings",         Home.CARD_SETTINGS, Permission.ACCESS_SETTINGS));
+        linksCard.add(link("User Management",  Home.CARD_USERS,    Permission.MANAGE_USERS));
+        linksCard.add(link("Backup & Restore", Home.CARD_BACKUP,   Permission.ACCESS_BACKUP));
+        linksCard.revalidate();
+        linksCard.repaint();
     }
 
     private JPanel link(String text, String card, Permission perm) {
@@ -293,9 +324,12 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
         row.add(l, BorderLayout.WEST);
         if (SessionContext.hasPermission(perm)) {
             row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            row.addMouseListener(new java.awt.event.MouseAdapter() {
+            l.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+            java.awt.event.MouseAdapter click = new java.awt.event.MouseAdapter() {
                 @Override public void mouseClicked(java.awt.event.MouseEvent e) { Home.navigate(card); }
-            });
+            };
+            row.addMouseListener(click);
+            l.addMouseListener(click);
         } else {
             l.setForeground(TEXT2);
         }

@@ -28,7 +28,8 @@ public class ItemService {
         try (var session = sf.openSession()) {
             String q = "%" + query.trim().toLowerCase() + "%";
             return session.createQuery(
-                    "FROM Item i WHERE (lower(i.itemName) LIKE :q OR lower(i.sku) LIKE :q) " +
+                    "FROM Item i LEFT JOIN FETCH i.category LEFT JOIN FETCH i.brands " +
+                    "WHERE (lower(i.itemName) LIKE :q OR lower(i.sku) LIKE :q) " +
                     "AND i.stat = 'Active' ORDER BY i.itemName",
                     Item.class)
                     .setParameter("q", q)
@@ -46,7 +47,9 @@ public class ItemService {
     /** All items as StockLevelDto (for ViewStockPanel). */
     public List<StockLevelDto> listAllStockLevels() {
         try (var session = sf.openSession()) {
-            return session.createQuery("FROM Item i ORDER BY i.itemName", Item.class)
+            return session.createQuery(
+                    "FROM Item i LEFT JOIN FETCH i.category LEFT JOIN FETCH i.brands ORDER BY i.itemName",
+                    Item.class)
                     .list()
                     .stream()
                     .map(this::toStockLevelDto)

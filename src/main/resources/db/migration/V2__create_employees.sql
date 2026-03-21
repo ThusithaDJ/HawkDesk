@@ -16,4 +16,4 @@ CREATE TABLE IF NOT EXISTS employees (
 -- Insert a default Owner account (PIN: 1234 — BCrypt hash, must be changed after first login)
 -- BCrypt hash of '1234' with cost factor 10:
 INSERT INTO employees (name, role, pin_hash, active)
-VALUES ('Admin', 'OWNER', '$2a$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy', TRUE);
+VALUES ('Admin', 'OWNER', '$2a$10$QTO6QbO8LW/TJlVRQETu0OGa5yj4PrG3NVDghjIdNzkOvAOIzAetq', TRUE);

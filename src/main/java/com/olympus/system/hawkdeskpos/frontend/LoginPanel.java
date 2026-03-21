@@ -171,7 +171,7 @@ public class LoginPanel extends JPanel {
             JPanel card = buildStaffCard(employees[i], false);
             card.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override public void mouseClicked(java.awt.event.MouseEvent e) { selectEmployee(idx); }
-                @Override public void mouseEntered(java.awt.event.MouseEvent e) { card.setBackground(new Color(255,255,255,56)); }
+                @Override public void mouseEntered(java.awt.event.MouseEvent e) { card.setBackground(new Color(255,255,255,38)); }
                 @Override public void mouseExited(java.awt.event.MouseEvent e)  {
                     card.setBackground(idx == getSelectedIndex()
                             ? new Color(255,255,255,46) : new Color(255,255,255,20));
@@ -198,8 +198,16 @@ public class LoginPanel extends JPanel {
     }
 
     private JPanel buildStaffCard(EmployeeDto emp, boolean selected) {
-        JPanel card = new JPanel(new BorderLayout(11, 0));
-        card.setBorder(new EmptyBorder(12, 14, 12, 14));
+        JPanel card = new JPanel(new BorderLayout(11, 0)) {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                g2.dispose();
+            }
+        };
+        card.setOpaque(false);
         card.setBackground(selected ? new Color(255,255,255,46) : new Color(255,255,255,20));
         card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 

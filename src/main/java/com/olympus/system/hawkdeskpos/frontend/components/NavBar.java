@@ -96,6 +96,24 @@ public class NavBar extends JPanel {
         clockLabel.setFont(clockLabel.getFont().deriveFont(13f));
         right.add(clockLabel);
 
+        JButton minimizeBtn = new JButton("—");
+        minimizeBtn.setForeground(WHITE);
+        minimizeBtn.setBackground(new Color(255, 255, 255, 30));
+        minimizeBtn.setOpaque(true);
+        minimizeBtn.setBorderPainted(false);
+        minimizeBtn.setFont(minimizeBtn.getFont().deriveFont(13f));
+        minimizeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        minimizeBtn.setToolTipText("Minimize");
+        minimizeBtn.addActionListener(e -> {
+            java.awt.Window w = SwingUtilities.getWindowAncestor(NavBar.this);
+            if (w instanceof java.awt.Frame f) f.setState(java.awt.Frame.ICONIFIED);
+        });
+        minimizeBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { minimizeBtn.setBackground(new Color(255,255,255,60)); }
+            @Override public void mouseExited(MouseEvent e)  { minimizeBtn.setBackground(new Color(255,255,255,30)); }
+        });
+        right.add(minimizeBtn);
+
         JButton logoutBtn = new JButton("Log out");
         logoutBtn.setForeground(WHITE);
         logoutBtn.setBackground(new Color(255, 255, 255, 30));
