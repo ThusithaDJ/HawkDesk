@@ -1,11 +1,13 @@
 package com.olympus.system.hawkdeskpos.frontend.stock;
 
+import com.olympus.system.hawkdeskpos.dto.StockBatchDto;
 import com.olympus.system.hawkdeskpos.dto.StockLevelDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
 import com.olympus.system.hawkdeskpos.frontend.components.StatusPill;
 import com.olympus.system.hawkdeskpos.service.CategoryService;
 import com.olympus.system.hawkdeskpos.service.ItemService;
+import com.olympus.system.hawkdeskpos.service.StockService;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -27,6 +29,7 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
 
     private final ItemService     itemService;
     private final CategoryService categoryService;
+    private final StockService    stockService;
 
     private JLabel totalItems, outOfStock, lowStock, totalValue;
     private JTextField searchField;
@@ -34,14 +37,21 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
     private DefaultTableModel tableModel;
     private JTable table;
     private List<StockLevelDto> allItems;
+    private List<StockBatchDto> allBatches;
+    private boolean showBatchView = false;
+    private JButton toggleViewBtn;
 
     private static final String[] COLUMNS = {
             "Item Name", "SKU", "Category", "Brand", "Qty", "Status", "Price (Rs.)", "Actions"
     };
+    private static final String[] BATCH_COLS = {
+            "Item Name", "SKU / Variant", "Batch / GRN", "Qty", "Cost (Rs.)", "Sell (Rs.)", "Status"
+    };
 
-    public ViewStockPanel(ItemService itemService, CategoryService categoryService) {
+    public ViewStockPanel(ItemService itemService, CategoryService categoryService, StockService stockService) {
         this.itemService     = itemService;
         this.categoryService = categoryService;
+        this.stockService    = stockService;
         setBackground(BG);
         setLayout(new BorderLayout(0, 0));
         buildUI();
@@ -65,6 +75,9 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
 
         JPanel actionBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         actionBar.setOpaque(false);
+        toggleViewBtn = new JButton("⊞ By Batch");
+        toggleViewBtn.addActionListener(e -> toggleView());
+        actionBar.add(toggleViewBtn);
         JButton addBtn = new JButton("+ Add New Item");
         addBtn.setBackground(NAVY);
         addBtn.setForeground(Color.WHITE);
@@ -151,8 +164,14 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && table.getSelectedRow() >= 0) {
                 int modelRow = table.convertRowIndexToModel(table.getSelectedRow());
-                if (allItems != null && modelRow < allItems.size()) {
-                    Home.navigateToEditItem(allItems.get(modelRow).itemId());
+                if (showBatchView) {
+                    if (allBatches != null && modelRow < allBatches.size()) {
+                        Home.navigateToEditItem(allBatches.get(modelRow).itemId());
+                    }
+                } else {
+                    if (allItems != null && modelRow < allItems.size()) {
+                        Home.navigateToEditItem(allItems.get(modelRow).itemId());
+                    }
                 }
             }
         });
@@ -195,35 +214,64 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
     }
 
     private void loadDataAsync() {
-        new SwingWorker<List<StockLevelDto>, Void>() {
-            @Override protected List<StockLevelDto> doInBackground() {
-                return itemService.listAllStockLevels();
+        new SwingWorker<Void, Void>() {
+            List<StockLevelDto> items;
+            List<StockBatchDto> batches;
+            @Override protected Void doInBackground() {
+                items   = itemService.listAllStockLevels();
+                batches = stockService.listAllStockBatches();
+                return null;
             }
             @Override protected void done() {
                 try {
-                    allItems = get();
+                    get();
+                    allItems   = items;
+                    allBatches = batches;
                     updateStats();
-                    populateTable(allItems);
+                    if (showBatchView) populateBatchTable(allBatches);
+                    else              populateTable(allItems);
                 } catch (Exception ignored) {}
             }
         }.execute();
     }
 
+    private void toggleView() {
+        showBatchView = !showBatchView;
+        tableModel.setColumnIdentifiers(showBatchView ? BATCH_COLS : COLUMNS);
+        tableModel.setRowCount(0);
+        table.setAutoCreateRowSorter(true); // re-attach sorter after column change
+        toggleViewBtn.setText(showBatchView ? "☰ By Item" : "⊞ By Batch");
+        applyFilter();
+    }
+
     private void applyFilter() {
-        if (allItems == null) return;
         String q      = searchField.getText().trim().toLowerCase();
         String cat    = (String) catFilter.getSelectedItem();
         String status = (String) statusFilter.getSelectedItem();
 
-        List<StockLevelDto> filtered = allItems.stream().filter(d -> {
-            boolean matchQ = q.isEmpty()
-                    || d.itemName().toLowerCase().contains(q)
-                    || (d.sku() != null && d.sku().toLowerCase().contains(q));
-            boolean matchC = "All Categories".equals(cat) || cat.equals(d.categoryName());
-            boolean matchS = "All Status".equals(status) || status.equals(d.stockStatus());
-            return matchQ && matchC && matchS;
-        }).collect(Collectors.toList());
-        populateTable(filtered);
+        if (showBatchView) {
+            if (allBatches == null) return;
+            List<StockBatchDto> filtered = allBatches.stream().filter(d -> {
+                boolean matchQ = q.isEmpty()
+                        || d.itemName().toLowerCase().contains(q)
+                        || d.displaySku().toLowerCase().contains(q)
+                        || d.batch().toLowerCase().contains(q);
+                boolean matchS = "All Status".equals(status) || status.equals(d.stockStatus());
+                return matchQ && matchS;
+            }).collect(Collectors.toList());
+            populateBatchTable(filtered);
+        } else {
+            if (allItems == null) return;
+            List<StockLevelDto> filtered = allItems.stream().filter(d -> {
+                boolean matchQ = q.isEmpty()
+                        || d.itemName().toLowerCase().contains(q)
+                        || (d.sku() != null && d.sku().toLowerCase().contains(q));
+                boolean matchC = "All Categories".equals(cat) || cat.equals(d.categoryName());
+                boolean matchS = "All Status".equals(status) || status.equals(d.stockStatus());
+                return matchQ && matchC && matchS;
+            }).collect(Collectors.toList());
+            populateTable(filtered);
+        }
     }
 
     private void populateTable(List<StockLevelDto> items) {
@@ -233,6 +281,19 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
                     d.itemName(), d.sku(), d.categoryName(), d.brandName(),
                     d.totalQty(), d.stockStatus(),
                     String.format("%.2f", d.sellingPrice()), "Edit"
+            });
+        }
+    }
+
+    private void populateBatchTable(List<StockBatchDto> batches) {
+        tableModel.setRowCount(0);
+        for (StockBatchDto d : batches) {
+            tableModel.addRow(new Object[]{
+                    d.itemName(), d.displaySku(), d.batch(),
+                    d.qty(),
+                    String.format("%.2f", d.costPrice()),
+                    String.format("%.2f", d.sellingPrice()),
+                    d.stockStatus()
             });
         }
     }

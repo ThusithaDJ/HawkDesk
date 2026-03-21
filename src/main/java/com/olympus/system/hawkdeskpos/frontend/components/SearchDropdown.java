@@ -137,7 +137,7 @@ public class SearchDropdown extends JPanel {
                     if (items.isEmpty()) { dropWindow.setVisible(false); return; }
                     items.forEach(model::addElement);
                     resultList.setVisibleRowCount(Math.min(items.size(), 8));
-                    int rowH = 52;
+                    int rowH = 64;
                     int visRows = Math.min(items.size(), 8);
                     // Position directly below the text field using screen coordinates
                     Point p = searchField.getLocationOnScreen();
@@ -183,8 +183,8 @@ public class SearchDropdown extends JPanel {
             left.add(sub);
             row.add(left, BorderLayout.CENTER);
 
-            // Right: status pill + price
-            JPanel right = new JPanel(new GridLayout(2, 1, 0, 2));
+            // Right: status pill + sell price + cost price
+            JPanel right = new JPanel(new GridLayout(3, 1, 0, 1));
             right.setOpaque(false);
             StatusPill pill = StatusPill.forStatus(item.stockStatus());
             pill.setHorizontalAlignment(SwingConstants.RIGHT);
@@ -192,8 +192,13 @@ public class SearchDropdown extends JPanel {
             price.setFont(price.getFont().deriveFont(Font.BOLD, 12f));
             price.setForeground(NAVY);
             price.setHorizontalAlignment(SwingConstants.RIGHT);
+            JLabel cost = new JLabel(String.format("Cost: Rs. %.2f", item.costPrice()));
+            cost.setFont(cost.getFont().deriveFont(10f));
+            cost.setForeground(TEXT2);
+            cost.setHorizontalAlignment(SwingConstants.RIGHT);
             right.add(pill);
             right.add(price);
+            right.add(cost);
             row.add(right, BorderLayout.EAST);
 
             return row;

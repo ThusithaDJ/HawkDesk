@@ -3,6 +3,7 @@ package com.olympus.system.hawkdeskpos.service;
 import com.olympus.system.hawkdeskpos.db.dao.*;
 import com.olympus.system.hawkdeskpos.dto.AdjustmentDto;
 import com.olympus.system.hawkdeskpos.dto.GrnDto;
+import com.olympus.system.hawkdeskpos.dto.StockBatchDto;
 import com.olympus.system.hawkdeskpos.dto.StockLevelDto;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
@@ -11,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class StockService {
 
@@ -51,15 +53,32 @@ public class StockService {
                 Item item = session.get(Item.class, line.itemId());
                 if (item == null) continue;
 
-                // Update or create stock record
+                // Create new stock record for this GRN
                 Stock stock = new Stock();
                 stock.setItem(item);
                 stock.setGrninfo(info);
                 stock.setQty(line.qtyReceived());
                 stock.setCost(line.costPrice());
                 stock.setPrice(line.sellingPrice());
-                stock.setBatch(grnNumber);
+                // Use custom batch name if provided, else fall back to GRN number
+                String batchLabel = (line.batchName() != null && !line.batchName().isBlank())
+                        ? line.batchName() : grnNumber;
+                stock.setBatch(batchLabel);
                 stock.setEmployee(emp);
+                // If a variant SKU is provided, find or create the item_variant record
+                if (line.variantSku() != null && !line.variantSku().isBlank()) {
+                    ItemVariant variant = session.createQuery(
+                            "FROM ItemVariant v WHERE v.sku = :sku", ItemVariant.class)
+                            .setParameter("sku", line.variantSku()).uniqueResult();
+                    if (variant == null) {
+                        variant = new ItemVariant();
+                        variant.setItem(item);
+                        variant.setSku(line.variantSku());
+                        session.persist(variant);
+                    }
+                    stock.setVariant(variant);
+                    stock.setSku(line.variantSku()); // mirror for display convenience
+                }
                 session.persist(stock);
 
                 Grn grn = new Grn(item, info);
@@ -121,6 +140,35 @@ public class StockService {
         }
     }
 
+    /** Per-batch stock view — one row per active Stock record. */
+    public List<StockBatchDto> listAllStockBatches() {
+        try (var session = sf.openSession()) {
+            return session.createQuery(
+                    "SELECT s FROM Stock s " +
+                    "JOIN FETCH s.item i " +
+                    "LEFT JOIN FETCH i.category LEFT JOIN FETCH i.brands " +
+                    "WHERE s.stat = 'Active' ORDER BY i.itemName, s.stockId",
+                    Stock.class).list().stream().map(s -> {
+                        Item item = s.getItem();
+                        String displaySku = (s.getSku() != null && !s.getSku().isEmpty())
+                                ? s.getSku() : (item.getSku() != null ? item.getSku() : "");
+                        return new StockBatchDto(
+                                s.getStockId(), item.getItemId(), item.getItemName(),
+                                item.getSku() != null ? item.getSku() : "",
+                                displaySku,
+                                s.getBatch() != null ? s.getBatch() : "",
+                                s.getQty() != null ? s.getQty() : 0,
+                                item.getMinLevel() != null ? item.getMinLevel() : 5,
+                                s.getCost() != null ? s.getCost() : 0,
+                                s.getPrice() != null ? s.getPrice() : 0,
+                                s.getStat() != null ? s.getStat() : "Active");
+                    }).collect(Collectors.toList());
+        } catch (Exception e) {
+            System.err.println("StockService.listAllStockBatches: " + e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
     /** Lists all GRNs for GrnHistoryPanel — returns lightweight summary DTOs. */
     public List<GrnDto> listGrnHistory() {
         try (var session = sf.openSession()) {
@@ -135,7 +183,7 @@ public class StockService {
                                         ln.getItem() != null ? ln.getItem().getItemName() : "",
                                         ln.getItemQty() != null ? ln.getItemQty() : 0,
                                         ln.getItemCost() != null ? ln.getItemCost() : 0,
-                                        ln.getItemPrice() != null ? ln.getItemPrice() : 0, 0))
+                                        ln.getItemPrice() != null ? ln.getItemPrice() : 0, 0, null, null))
                                 .toList();
                         return new GrnDto(
                                 g.getSupplier() != null ? g.getSupplier() : ("GRN-" + g.getGrnNo()),

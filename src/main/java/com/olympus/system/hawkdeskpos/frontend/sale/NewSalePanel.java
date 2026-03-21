@@ -245,6 +245,8 @@ public class NewSalePanel extends JPanel {
         cartModel.setRowCount(0);
         discountField.setText("0");
         amountRecField.setText("");
+        changeLabel.setText("Rs. 0.00");
+        changeLabel.setForeground(GREEN);
         paymentMethod = "CASH";
         if (btnCash != null) btnCash.setSelected(true);
         updateTotals();
@@ -341,8 +343,8 @@ public class NewSalePanel extends JPanel {
 
         JScrollPane resultScroll = new JScrollPane(resultsPanel);
         resultScroll.setBorder(BorderFactory.createMatteBorder(0, 1, 1, 1, new Color(0xC8, 0xCD, 0xD6)));
-        resultScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54 * 5 + 8));
-        resultScroll.setPreferredSize(new Dimension(0, 54 * 5 + 8));
+        resultScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, 64 * 5 + 8));
+        resultScroll.setPreferredSize(new Dimension(0, 64 * 5 + 8));
         resultScroll.setHorizontalScrollBarPolicy(ScrollPaneConstants.HORIZONTAL_SCROLLBAR_NEVER);
         resultScroll.setVisible(false);
         resultsPanel.putClientProperty("scrollPane", resultScroll);
@@ -366,7 +368,7 @@ public class NewSalePanel extends JPanel {
         String q = searchField.getText().trim();
         if (q.isEmpty()) { clearResults(); return; }
         new SwingWorker<List<ItemDto>, Void>() {
-            @Override protected List<ItemDto> doInBackground() { return itemService.search(q); }
+            @Override protected List<ItemDto> doInBackground() { return itemService.searchForSale(q); }
             @Override protected void done() {
                 try {
                     List<ItemDto> items = get();
@@ -392,7 +394,7 @@ public class NewSalePanel extends JPanel {
         row.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(0, 0, 1, 0, new Color(0xF0, 0xF2, 0xF5)),
                 new EmptyBorder(8, 14, 8, 14)));
-        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 54));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 64));
         row.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
         JPanel left = new JPanel(new GridLayout(2, 1, 0, 2));
@@ -406,7 +408,7 @@ public class NewSalePanel extends JPanel {
         left.add(subLbl);
         row.add(left, BorderLayout.CENTER);
 
-        JPanel right = new JPanel(new GridLayout(2, 1, 0, 2));
+        JPanel right = new JPanel(new GridLayout(3, 1, 0, 1));
         right.setOpaque(false);
         StatusPill pill = StatusPill.forStatus(item.stockStatus());
         pill.setHorizontalAlignment(SwingConstants.RIGHT);
@@ -414,8 +416,13 @@ public class NewSalePanel extends JPanel {
         priceLbl.setFont(priceLbl.getFont().deriveFont(Font.BOLD, 12f));
         priceLbl.setForeground(NAVY);
         priceLbl.setHorizontalAlignment(SwingConstants.RIGHT);
+        JLabel costLbl = new JLabel(String.format("Cost: Rs. %.2f", item.costPrice()));
+        costLbl.setFont(costLbl.getFont().deriveFont(10f));
+        costLbl.setForeground(TEXT2);
+        costLbl.setHorizontalAlignment(SwingConstants.RIGHT);
         right.add(pill);
         right.add(priceLbl);
+        right.add(costLbl);
         row.add(right, BorderLayout.EAST);
 
         MouseAdapter rowClick = new MouseAdapter() {
@@ -693,7 +700,12 @@ public class NewSalePanel extends JPanel {
 
     private void addToCart(ItemDto item) {
         for (int i = 0; i < cartItems.size(); i++) {
-            if (cartItems.get(i).itemId() == item.itemId()) {
+            ItemDto existing = cartItems.get(i);
+            // Match by specific stockId if available, otherwise by itemId
+            boolean match = (item.stockId() > 0 && existing.stockId() > 0)
+                    ? existing.stockId() == item.stockId()
+                    : existing.itemId() == item.itemId() && existing.stockId() == item.stockId();
+            if (match) {
                 adjustQty(i, +1);
                 return;
             }
@@ -769,8 +781,8 @@ public class NewSalePanel extends JPanel {
         for (int i = 0; i < cartItems.size(); i++) {
             ItemDto item = cartItems.get(i);
             int     qty  = cartQtys.get(i);
-            lines.add(new SaleLineDto(item.itemId(), 0, item.itemName(), item.sku(), qty,
-                    item.sellingPrice(), qty * item.sellingPrice()));
+            lines.add(new SaleLineDto(item.itemId(), item.stockId(), item.itemName(), item.sku(), qty,
+                    item.sellingPrice(), qty * item.sellingPrice(), ""));
         }
 
         final double fd = discount, fp = amountPaid;

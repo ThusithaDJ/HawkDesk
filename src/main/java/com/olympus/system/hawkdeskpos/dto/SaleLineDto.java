@@ -8,5 +8,6 @@ public record SaleLineDto(
         String sku,
         int qty,
         double unitPrice,
-        double lineTotal
+        double lineTotal,
+        String batch       // batch / GRN number from the stock record; empty string when unknown
 ) {}

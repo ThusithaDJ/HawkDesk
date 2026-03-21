@@ -26,12 +26,10 @@ public class SaleService {
 
     public TodaySummary getTodaySummary() {
         try (var session = sf.openSession()) {
-            // Revenue + transaction count
             Object[] row = (Object[]) session.createNativeQuery(
                     "SELECT COALESCE(SUM(total), 0), COUNT(*) " +
                     "FROM invoiceinfo WHERE DATE(date) = CURDATE() AND stat != 'Void'",
                     Object[].class).uniqueResult();
-            // Items sold (separate query avoids LEFT JOIN row multiplication)
             Object itemsObj = session.createNativeQuery(
                     "SELECT COALESCE(SUM(i.qty), 0) FROM invoice i " +
                     "JOIN invoiceinfo ii ON i.invoice_no = ii.invoice_no " +
@@ -45,6 +43,32 @@ public class SaleService {
         } catch (Exception e) {
             System.err.println("SaleService.getTodaySummary: " + e.getMessage());
             return new TodaySummary(0, 0, 0);
+        }
+    }
+
+    /** Revenue for the current calendar week (Monday–Sunday). */
+    public double getWeekRevenue() {
+        try (var session = sf.openSession()) {
+            Object obj = session.createNativeQuery(
+                    "SELECT COALESCE(SUM(total), 0) FROM invoiceinfo " +
+                    "WHERE YEARWEEK(date, 1) = YEARWEEK(CURDATE(), 1) AND stat != 'Void'",
+                    Object.class).uniqueResult();
+            return obj instanceof Number n ? n.doubleValue() : 0;
+        } catch (Exception e) {
+            System.err.println("SaleService.getWeekRevenue: " + e.getMessage());
+            return 0;
+        }
+    }
+
+    /** Count of invoices with stat = 'Return'. */
+    public long getReturnCount() {
+        try (var session = sf.openSession()) {
+            Object obj = session.createNativeQuery(
+                    "SELECT COUNT(*) FROM invoiceinfo WHERE stat = 'Return'",
+                    Object.class).uniqueResult();
+            return obj instanceof Number n ? n.longValue() : 0;
+        } catch (Exception e) {
+            return 0;
         }
     }
 
@@ -70,8 +94,21 @@ public class SaleService {
             session.persist(header);
 
             for (SaleLineDto line : lines) {
-                Stock stock = session.get(Stock.class, line.stockId());
-                Item  item  = session.get(Item.class,  line.itemId());
+                Item item = session.get(Item.class, line.itemId());
+
+                // Resolve stock: use specified stockId if valid, else pick first active (FIFO)
+                Stock stock = null;
+                if (line.stockId() > 0) {
+                    stock = session.get(Stock.class, line.stockId());
+                }
+                if (stock == null) {
+                    List<Stock> stocks = session.createQuery(
+                            "FROM Stock s WHERE s.item.itemId = :id AND s.stat = 'Active' " +
+                            "AND s.qty > 0 ORDER BY s.stockId",
+                            Stock.class).setParameter("id", line.itemId()).setMaxResults(1).list();
+                    if (!stocks.isEmpty()) stock = stocks.get(0);
+                }
+
                 if (stock != null) {
                     stock.setQty(Math.max(0, stock.getQty() - line.qty()));
                     session.merge(stock);
@@ -93,19 +130,30 @@ public class SaleService {
         return invNo;
     }
 
-    /** Lists invoices for SalesHistoryPanel and FindInvoicePanel. */
+    /**
+     * Lists invoices with optional date filtering pushed to DB.
+     * search and paymentMethod are filtered in memory after loading.
+     */
     public List<InvoiceDto> listInvoices(String search, Date from, Date to, String paymentMethod) {
         try (var session = sf.openSession()) {
-            var q = session.createQuery(
+            StringBuilder hql = new StringBuilder(
                     "SELECT DISTINCT ii FROM Invoiceinfo ii " +
                     "LEFT JOIN FETCH ii.employee " +
                     "LEFT JOIN FETCH ii.invoices inv " +
                     "LEFT JOIN FETCH inv.item " +
-                    "ORDER BY ii.date DESC",
-                    Invoiceinfo.class)
-                    .setMaxResults(500).list();
-            return q.stream()
-                    .filter(ii -> matches(ii, search, from, to, paymentMethod))
+                    "LEFT JOIN FETCH inv.stock " +
+                    "WHERE 1=1");
+            if (from != null) hql.append(" AND ii.date >= :from");
+            if (to   != null) hql.append(" AND ii.date <= :to");
+            hql.append(" ORDER BY ii.date DESC");
+
+            var q = session.createQuery(hql.toString(), Invoiceinfo.class);
+            if (from != null) q.setParameter("from", from);
+            if (to   != null) q.setParameter("to",   to);
+            q.setMaxResults(1000);
+
+            return q.list().stream()
+                    .filter(ii -> matchesFilter(ii, search, paymentMethod))
                     .map(this::toDto)
                     .collect(Collectors.toList());
         } catch (Exception e) {
@@ -121,6 +169,7 @@ public class SaleService {
                     "LEFT JOIN FETCH ii.employee " +
                     "LEFT JOIN FETCH ii.invoices inv " +
                     "LEFT JOIN FETCH inv.item " +
+                    "LEFT JOIN FETCH inv.stock " +
                     "WHERE ii.invoiceNo = :no",
                     Invoiceinfo.class)
                     .setParameter("no", invoiceNo)
@@ -145,11 +194,9 @@ public class SaleService {
         }
     }
 
-    private boolean matches(Invoiceinfo ii, String search, Date from, Date to, String method) {
+    private boolean matchesFilter(Invoiceinfo ii, String search, String method) {
         if (search != null && !search.isEmpty() &&
                 !ii.getInvoiceNo().toLowerCase().contains(search.toLowerCase())) return false;
-        if (from != null && ii.getDate() != null && ii.getDate().before(from)) return false;
-        if (to   != null && ii.getDate() != null && ii.getDate().after(to))    return false;
         if (method != null && !method.isEmpty() && !"All".equals(method) &&
                 !method.equals(ii.getPaymentMethod())) return false;
         return true;
@@ -158,14 +205,24 @@ public class SaleService {
     private InvoiceDto toDto(Invoiceinfo ii) {
         String cashier = ii.getEmployee() != null ? ii.getEmployee().getName() : "—";
         List<SaleLineDto> lines = ii.getInvoices().stream()
-                .map(inv -> new SaleLineDto(
-                        inv.getItem() != null ? inv.getItem().getItemId() : 0,
-                        inv.getStock() != null ? inv.getStock().getStockId() : 0,
-                        inv.getItem() != null ? inv.getItem().getItemName() : "?",
-                        inv.getItem() != null ? inv.getItem().getSku() : "",
-                        inv.getQty() != null ? inv.getQty() : 0,
-                        inv.getStock() != null && inv.getStock().getPrice() != null ? inv.getStock().getPrice() : 0,
-                        inv.getSubTotal() != null ? inv.getSubTotal() : 0))
+                .map(inv -> {
+                    // Use variant SKU from stock if available, otherwise item-level SKU
+                    String sku = inv.getItem() != null ? (inv.getItem().getSku() != null ? inv.getItem().getSku() : "") : "";
+                    if (inv.getStock() != null && inv.getStock().getSku() != null && !inv.getStock().getSku().isEmpty()) {
+                        sku = inv.getStock().getSku();
+                    }
+                    String batch = inv.getStock() != null && inv.getStock().getBatch() != null
+                            ? inv.getStock().getBatch() : "";
+                    return new SaleLineDto(
+                            inv.getItem() != null ? inv.getItem().getItemId() : 0,
+                            inv.getStock() != null ? inv.getStock().getStockId() : 0,
+                            inv.getItem() != null ? inv.getItem().getItemName() : "?",
+                            sku,
+                            inv.getQty() != null ? inv.getQty() : 0,
+                            inv.getStock() != null && inv.getStock().getPrice() != null ? inv.getStock().getPrice() : 0,
+                            inv.getSubTotal() != null ? inv.getSubTotal() : 0,
+                            batch);
+                })
                 .collect(Collectors.toList());
         return new InvoiceDto(ii.getInvoiceNo(), ii.getDate(),
                 ii.getTotal() != null ? ii.getTotal() : 0,

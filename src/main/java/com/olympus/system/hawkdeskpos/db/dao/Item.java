@@ -44,6 +44,9 @@ public class Item implements Serializable {
     private Set<Stock> stocks = new HashSet<>(0);
 
     @OneToMany(mappedBy = "item", fetch = FetchType.LAZY)
+    private Set<ItemVariant> variants = new HashSet<>(0);
+
+    @OneToMany(mappedBy = "item", fetch = FetchType.LAZY)
     private Set<Invoice> invoices = new HashSet<>(0);
 
     @OneToMany(mappedBy = "item", fetch = FetchType.LAZY)
@@ -75,6 +78,8 @@ public class Item implements Serializable {
     public void setStat(String stat) { this.stat = stat; }
     public Set<Stock> getStocks() { return stocks; }
     public void setStocks(Set<Stock> stocks) { this.stocks = stocks; }
+    public Set<ItemVariant> getVariants() { return variants; }
+    public void setVariants(Set<ItemVariant> variants) { this.variants = variants; }
     public Set<Invoice> getInvoices() { return invoices; }
     public void setInvoices(Set<Invoice> invoices) { this.invoices = invoices; }
     public Set<Grn> getGrns() { return grns; }

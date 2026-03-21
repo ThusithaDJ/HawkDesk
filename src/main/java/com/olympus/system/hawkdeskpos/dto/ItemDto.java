@@ -13,7 +13,8 @@ public record ItemDto(
         int minLevel,
         int maxLevel,
         double costPrice,
-        double sellingPrice
+        double sellingPrice,
+        int stockId           // 0 = aggregated across all unnamed stocks; >0 = specific stock record
 ) {
     /** Derived stock status for display. */
     public String stockStatus() {

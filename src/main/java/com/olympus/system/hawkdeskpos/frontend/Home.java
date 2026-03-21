@@ -114,7 +114,7 @@ public class Home extends JFrame {
         cardHost.add(new LoginPanel(authService, auditService, this::onLoginSuccess), CARD_LOGIN);
         cardHost.add(new DashboardPanel(itemService, saleService, settingsService), CARD_DASH);
         cardHost.add(new NewSalePanel(itemService, saleService, settingsService), CARD_SALE);
-        cardHost.add(new ViewStockPanel(itemService, categoryService), CARD_STOCK);
+        cardHost.add(new ViewStockPanel(itemService, categoryService, stockService), CARD_STOCK);
         cardHost.add(new AddItemPanel(itemService, categoryService), CARD_ADD_ITEM);
         cardHost.add(new EditItemPanel(itemService, categoryService), CARD_EDIT_ITEM);
         cardHost.add(new ReceiveStockPanel(itemService, stockService, settingsService), CARD_RECEIVE);

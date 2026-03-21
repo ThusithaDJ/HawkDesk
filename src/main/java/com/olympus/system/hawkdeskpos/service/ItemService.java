@@ -8,8 +8,7 @@ import org.hibernate.Transaction;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.Collections;
-import java.util.List;
+import java.util.*;
 import java.util.stream.Collectors;
 
 public class ItemService {
@@ -22,7 +21,10 @@ public class ItemService {
         this.audit = audit;
     }
 
-    /** Live search — used by SearchDropdown. Returns up to 8 matches. */
+    /**
+     * Live search by item name or item SKU — used by GRN SearchDropdown.
+     * Returns one result per matching Item (aggregated across all stocks).
+     */
     public List<ItemDto> search(String query) {
         if (query == null || query.trim().isEmpty()) return Collections.emptyList();
         try (var session = sf.openSession()) {
@@ -42,6 +44,144 @@ public class ItemService {
             System.err.println("ItemService.search: " + e.getMessage());
             return Collections.emptyList();
         }
+    }
+
+    /**
+     * Live search for the New Sale screen.
+     * Returns one result per active variant (item_variant) plus one aggregated result
+     * for unnamed stocks. Also searches by variant SKU directly.
+     */
+    public List<ItemDto> searchForSale(String query) {
+        if (query == null || query.trim().isEmpty()) return Collections.emptyList();
+        try (var session = sf.openSession()) {
+            String q = "%" + query.trim().toLowerCase() + "%";
+
+            // Items matching by name or item-level SKU
+            List<Item> byItem = session.createQuery(
+                    "SELECT DISTINCT i FROM Item i " +
+                    "LEFT JOIN FETCH i.category LEFT JOIN FETCH i.brands " +
+                    "WHERE i.stat = 'Active' " +
+                    "AND (lower(i.itemName) LIKE :q OR lower(i.sku) LIKE :q) " +
+                    "ORDER BY i.itemName",
+                    Item.class)
+                    .setParameter("q", q).setMaxResults(12).list();
+
+            // item_variants whose SKU matches (may belong to items not matched above)
+            List<ItemVariant> byVariantSku = session.createQuery(
+                    "SELECT v FROM ItemVariant v " +
+                    "JOIN FETCH v.item i LEFT JOIN FETCH i.category LEFT JOIN FETCH i.brands " +
+                    "WHERE v.stat = 'Active' AND lower(v.sku) LIKE :q",
+                    ItemVariant.class)
+                    .setParameter("q", q).setMaxResults(12).list();
+
+            List<ItemDto> results = new ArrayList<>();
+            Set<Integer> processedItemIds = new HashSet<>();
+
+            for (Item item : byItem) {
+                processedItemIds.add(item.getItemId());
+                results.addAll(expandToVariants(item));
+            }
+            for (ItemVariant v : byVariantSku) {
+                if (processedItemIds.add(v.getItem().getItemId())) {
+                    results.addAll(expandToVariants(v.getItem()));
+                }
+            }
+            return results.stream().limit(10).collect(Collectors.toList());
+        } catch (Exception e) {
+            System.err.println("ItemService.searchForSale: " + e.getMessage());
+            return Collections.emptyList();
+        }
+    }
+
+    /**
+     * Expands an item into per-variant ItemDtos for the sale search results:
+     * - Active item_variants → one result each (aggregates all stock records for that variant)
+     * - Unnamed stocks (variant_id = null) → one aggregated result, sold FIFO
+     */
+    private List<ItemDto> expandToVariants(Item item) {
+        List<Stock> activeStocks = item.getStocks().stream()
+                .filter(s -> "Active".equals(s.getStat()))
+                .collect(Collectors.toList());
+
+        List<ItemDto> results = new ArrayList<>();
+
+        // Named variants — one result per active item_variant
+        item.getVariants().stream()
+                .filter(v -> "Active".equals(v.getStat()))
+                .forEach(v -> {
+                    List<Stock> vStocks = activeStocks.stream()
+                            .filter(s -> s.getVariant() != null
+                                    && s.getVariant().getVariantId().equals(v.getVariantId()))
+                            .collect(Collectors.toList());
+                    int qty = vStocks.stream().mapToInt(s -> s.getQty() != null ? s.getQty() : 0).sum();
+                    Stock sellFrom = vStocks.stream()
+                            .filter(s -> s.getQty() != null && s.getQty() > 0)
+                            .min(Comparator.comparingInt(Stock::getStockId))
+                            .orElse(vStocks.isEmpty() ? null : vStocks.get(0));
+                    if (sellFrom != null) {
+                        results.add(toVariantDto(sellFrom, item, v, qty));
+                    } else {
+                        // variant exists but no stock yet — show as OUT
+                        results.add(new ItemDto(item.getItemId(), item.getItemName(), v.getSku(),
+                                item.getCategory() != null ? item.getCategory().getCategoryName() : "",
+                                item.getBrands()   != null ? item.getBrands().getBrandName()      : "",
+                                item.getUnit()     != null ? item.getUnit()   : "pcs",
+                                item.getStat()     != null ? item.getStat()   : "Active",
+                                0,
+                                item.getMinLevel() != null ? item.getMinLevel() : 5,
+                                item.getMaxLevel() != null ? item.getMaxLevel() : 100,
+                                0, 0, 0));
+                    }
+                });
+
+        // Unnamed stocks (no variant) → aggregate, sell FIFO
+        List<Stock> unnamed = activeStocks.stream()
+                .filter(s -> s.getVariant() == null)
+                .collect(Collectors.toList());
+        if (!unnamed.isEmpty()) {
+            int totalQty = unnamed.stream().mapToInt(s -> s.getQty() != null ? s.getQty() : 0).sum();
+            Stock sellFrom = unnamed.stream()
+                    .filter(s -> s.getQty() != null && s.getQty() > 0)
+                    .min(Comparator.comparingInt(Stock::getStockId))
+                    .orElse(unnamed.get(0));
+            results.add(toStockDtoAggregated(sellFrom, item, totalQty));
+        }
+
+        if (results.isEmpty()) {
+            results.add(toDto(item)); // no stock, no variants — show as OUT
+        }
+        return results;
+    }
+
+    private ItemDto toVariantDto(Stock sellFrom, Item item, ItemVariant variant, int totalQty) {
+        return new ItemDto(
+                item.getItemId(), item.getItemName(), variant.getSku(),
+                item.getCategory() != null ? item.getCategory().getCategoryName() : "",
+                item.getBrands()   != null ? item.getBrands().getBrandName()      : "",
+                item.getUnit()     != null ? item.getUnit()     : "pcs",
+                item.getStat()     != null ? item.getStat()     : "Active",
+                totalQty,
+                item.getMinLevel() != null ? item.getMinLevel() : 5,
+                item.getMaxLevel() != null ? item.getMaxLevel() : 100,
+                sellFrom.getCost()  != null ? sellFrom.getCost()  : 0,
+                sellFrom.getPrice() != null ? sellFrom.getPrice() : 0,
+                sellFrom.getStockId());
+    }
+
+    private ItemDto toStockDtoAggregated(Stock sellFrom, Item item, int totalQty) {
+        return new ItemDto(
+                item.getItemId(), item.getItemName(),
+                item.getSku() != null ? item.getSku() : "",
+                item.getCategory() != null ? item.getCategory().getCategoryName() : "",
+                item.getBrands()   != null ? item.getBrands().getBrandName()      : "",
+                item.getUnit()     != null ? item.getUnit()     : "pcs",
+                item.getStat()     != null ? item.getStat()     : "Active",
+                totalQty,
+                item.getMinLevel() != null ? item.getMinLevel() : 5,
+                item.getMaxLevel() != null ? item.getMaxLevel() : 100,
+                sellFrom.getCost()  != null ? sellFrom.getCost()  : 0,
+                sellFrom.getPrice() != null ? sellFrom.getPrice() : 0,
+                sellFrom.getStockId());
     }
 
     /** All items as StockLevelDto (for ViewStockPanel). */
@@ -150,9 +290,10 @@ public class ItemService {
             item.setStat(stat);
             if (catId   != null) item.setCategory(session.get(Category.class, catId));
             if (brandId != null) item.setBrands(session.get(Brands.class, brandId));
-            // Update selling price on all active stock records
+            // Update selling price on all active unnamed stock records
             for (Stock s : item.getStocks()) {
-                if ("Active".equals(s.getStat())) s.setPrice(price);
+                if ("Active".equals(s.getStat()) && (s.getSku() == null || s.getSku().isEmpty()))
+                    s.setPrice(price);
             }
             session.merge(item);
             tx.commit();
@@ -175,7 +316,7 @@ public class ItemService {
                 .filter(s -> "Active".equals(s.getStat()))
                 .mapToInt(s -> s.getQty() == null ? 0 : s.getQty())
                 .sum();
-        double cost  = item.getStocks().stream().filter(s -> s.getCost() != null).mapToDouble(Stock::getCost).max().orElse(0);
+        double cost  = item.getStocks().stream().filter(s -> s.getCost()  != null).mapToDouble(Stock::getCost).max().orElse(0);
         double price = item.getStocks().stream().filter(s -> s.getPrice() != null).mapToDouble(Stock::getPrice).max().orElse(0);
         String cat   = item.getCategory() != null ? item.getCategory().getCategoryName() : "";
         String brand = item.getBrands()   != null ? item.getBrands().getBrandName()      : "";
@@ -183,7 +324,7 @@ public class ItemService {
                 cat, brand, item.getUnit() != null ? item.getUnit() : "pcs",
                 item.getStat() != null ? item.getStat() : "Active",
                 qty, item.getMinLevel() != null ? item.getMinLevel() : 5,
-                item.getMaxLevel() != null ? item.getMaxLevel() : 100, cost, price);
+                item.getMaxLevel() != null ? item.getMaxLevel() : 100, cost, price, 0);
     }
 
     private StockLevelDto toStockLevelDto(Item item) {

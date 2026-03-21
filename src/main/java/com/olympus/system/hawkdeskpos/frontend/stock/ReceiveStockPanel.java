@@ -13,12 +13,26 @@ import com.olympus.system.hawkdeskpos.session.SessionContext;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableCellRenderer;
 import java.awt.*;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
  * Receive Stock (GRN) screen.
+ *
+ * Table columns:
+ *   0  Item Name      (read-only)
+ *   1  Current SKU    (read-only)
+ *   2  Qty Received   [−] n [+]
+ *   3  Cost Price     [−] cost [+]
+ *   4  Sell Price     [−] price [+]
+ *   5  Variant SKU    editable — leave blank to update existing stock; fill to create a named variant
+ *   6  Batch          editable — custom batch/lot label; defaults to GRN number if blank
+ *   7  Current Stock  (read-only)
+ *   8  New Stock      (read-only, auto-calculated)
  */
 public class ReceiveStockPanel extends JPanel {
 
@@ -128,18 +142,80 @@ public class ReceiveStockPanel extends JPanel {
         searchRow.add(search);
         searchRow.add(hint);
 
-        String[] cols = {"Item Name", "SKU", "Qty Received", "Cost Price (Rs.)", "Current Stock", "New Stock"};
+        // Cols 5 (Variant SKU) and 6 (Batch) are editable; others use custom renderers + mouse listener
+        String[] cols = {"Item Name", "SKU", "Qty", "Cost (Rs.)", "Sell (Rs.)", "Variant SKU", "Batch", "Current", "New Stock"};
         deliveryModel = new DefaultTableModel(cols, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return c == 2 || c == 3; }
+            @Override public boolean isCellEditable(int r, int c) { return c == 5 || c == 6; }
         };
-        deliveryModel.addTableModelListener(e -> updateSummary());
+        // NOTE: no TableModelListener — updateSummary() writes col 7 which would cause
+        // infinite recursion. updateSummary() is called explicitly after each modification.
 
         deliveryTable = new JTable(deliveryModel);
-        deliveryTable.setRowHeight(36);
+        deliveryTable.setRowHeight(40);
         deliveryTable.setShowGrid(false);
         deliveryTable.setIntercellSpacing(new Dimension(0, 0));
         deliveryTable.getTableHeader().setFont(deliveryTable.getFont().deriveFont(Font.BOLD, 12f));
         deliveryTable.getTableHeader().setBackground(new Color(0xF7, 0xF8, 0xFA));
+
+        // Qty column
+        deliveryTable.getColumnModel().getColumn(2).setCellRenderer(new QtyButtonRenderer());
+        deliveryTable.getColumnModel().getColumn(2).setPreferredWidth(110);
+        deliveryTable.getColumnModel().getColumn(2).setMinWidth(100);
+
+        // Cost column
+        deliveryTable.getColumnModel().getColumn(3).setCellRenderer(new CostButtonRenderer());
+        deliveryTable.getColumnModel().getColumn(3).setPreferredWidth(130);
+        deliveryTable.getColumnModel().getColumn(3).setMinWidth(110);
+
+        // Sell Price column
+        deliveryTable.getColumnModel().getColumn(4).setCellRenderer(new CostButtonRenderer());
+        deliveryTable.getColumnModel().getColumn(4).setPreferredWidth(130);
+        deliveryTable.getColumnModel().getColumn(4).setMinWidth(110);
+
+        // Variant SKU column — normal text editing
+        deliveryTable.getColumnModel().getColumn(5).setPreferredWidth(110);
+
+        // Batch column — normal text editing
+        deliveryTable.getColumnModel().getColumn(6).setPreferredWidth(110);
+
+        // Current / New Stock — narrow
+        deliveryTable.getColumnModel().getColumn(7).setPreferredWidth(70);
+        deliveryTable.getColumnModel().getColumn(8).setPreferredWidth(80);
+
+        // Mouse listener for qty (col 2), cost (col 3), sell price (col 4)
+        deliveryTable.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                int col = deliveryTable.columnAtPoint(e.getPoint());
+                int row = deliveryTable.rowAtPoint(e.getPoint());
+                if (row < 0) return;
+
+                if (col == 2) {
+                    Rectangle cell = deliveryTable.getCellRect(row, col, false);
+                    int relX = e.getX() - cell.x;
+                    if (relX <= 30) {
+                        adjustQty(row, -1);
+                    } else if (relX >= cell.width - 30) {
+                        adjustQty(row, +1);
+                    } else {
+                        Object cur = deliveryModel.getValueAt(row, 2);
+                        String input = JOptionPane.showInputDialog(
+                                ReceiveStockPanel.this, "Enter quantity:",
+                                cur instanceof Number n ? n.intValue() : 1);
+                        if (input != null) {
+                            try {
+                                int qty = Math.max(1, Integer.parseInt(input.trim()));
+                                int current = ((Number) deliveryModel.getValueAt(row, 2)).intValue();
+                                adjustQty(row, qty - current);
+                            } catch (NumberFormatException ignored) {}
+                        }
+                    }
+                } else if (col == 3) {
+                    handleCostClick(row, col, e, "Enter cost price (Rs.):");
+                } else if (col == 4) {
+                    handleCostClick(row, col, e, "Enter selling price (Rs.):");
+                }
+            }
+        });
 
         JButton removeBtn = new JButton("Remove Selected");
         removeBtn.addActionListener(e -> {
@@ -152,7 +228,7 @@ public class ReceiveStockPanel extends JPanel {
 
         JScrollPane scroll = new JScrollPane(deliveryTable);
         scroll.setBorder(BorderFactory.createLineBorder(new Color(0xE2, 0xE5, 0xEA)));
-        scroll.setPreferredSize(new Dimension(0, 200));
+        scroll.setPreferredSize(new Dimension(0, 220));
 
         JPanel inner = new JPanel(new BorderLayout(0, 8));
         inner.setOpaque(false);
@@ -161,6 +237,28 @@ public class ReceiveStockPanel extends JPanel {
         inner.add(tableActions, BorderLayout.SOUTH);
         ((JPanel)c).add(inner, BorderLayout.CENTER);
         return c;
+    }
+
+    private void handleCostClick(int row, int col, MouseEvent e, String prompt) {
+        Rectangle cell = deliveryTable.getCellRect(row, col, false);
+        int relX = e.getX() - cell.x;
+        if (relX <= 30) {
+            adjustCost(row, col, -1.0);
+        } else if (relX >= cell.width - 30) {
+            adjustCost(row, col, +1.0);
+        } else {
+            Object cur = deliveryModel.getValueAt(row, col);
+            double curVal = cur instanceof Number n ? n.doubleValue() : 0;
+            String input = JOptionPane.showInputDialog(
+                    ReceiveStockPanel.this, prompt, String.format("%.2f", curVal));
+            if (input != null) {
+                try {
+                    double val = Math.max(0, Double.parseDouble(input.trim()));
+                    deliveryModel.setValueAt(val, row, col);
+                    updateSummary();
+                } catch (NumberFormatException ignored) {}
+            }
+        }
     }
 
     private void addItemToDelivery(ItemDto item) {
@@ -173,7 +271,10 @@ public class ReceiveStockPanel extends JPanel {
         deliveryItems.add(item);
         deliveryModel.addRow(new Object[]{
                 item.itemName(), item.sku(), 1,
-                item.costPrice(), item.currentQty(), item.currentQty() + 1
+                item.costPrice(), item.sellingPrice(),
+                "",              // Variant SKU (col 5)
+                "",              // Batch       (col 6)
+                item.currentQty(), item.currentQty() + 1
         });
         updateSummary();
     }
@@ -220,6 +321,14 @@ public class ReceiveStockPanel extends JPanel {
         stats.add(statRow("Total Qty",summaryQty));
         stats.add(statRow("Est. Cost",summaryCost));
         ((JPanel)c).add(stats, BorderLayout.CENTER);
+
+        JLabel variantNote = new JLabel("<html><font color='#5A6070' size='2'>" +
+                "<b>Variant SKU</b> — fill to create a new<br>price variant for the same item.<br><br>" +
+                "<b>Batch</b> — optional label (e.g. LOT-001,<br>expiry date). Defaults to GRN number." +
+                "</font></html>");
+        variantNote.setBorder(new EmptyBorder(10, 0, 0, 0));
+        ((JPanel)c).add(variantNote, BorderLayout.SOUTH);
+
         sidebar.add(c);
         return sidebar;
     }
@@ -247,7 +356,7 @@ public class ReceiveStockPanel extends JPanel {
             totalCost += qty * cost;
             if (i < deliveryItems.size()) {
                 int current = deliveryItems.get(i).currentQty();
-                deliveryModel.setValueAt(current + qty, i, 5);
+                deliveryModel.setValueAt(current + qty, i, 8); // col 8 = New Stock
             }
         }
         summaryQty.setText(totalQty + " units");
@@ -269,11 +378,19 @@ public class ReceiveStockPanel extends JPanel {
         double totalCost = 0;
         for (int i = 0; i < deliveryModel.getRowCount(); i++) {
             if (i >= deliveryItems.size()) continue;
-            ItemDto item = deliveryItems.get(i);
-            int    qty  = ((Number) deliveryModel.getValueAt(i, 2)).intValue();
-            double cost = ((Number) deliveryModel.getValueAt(i, 3)).doubleValue();
+            ItemDto item       = deliveryItems.get(i);
+            int    qty         = ((Number) deliveryModel.getValueAt(i, 2)).intValue();
+            double cost        = ((Number) deliveryModel.getValueAt(i, 3)).doubleValue();
+            double sellPrice   = ((Number) deliveryModel.getValueAt(i, 4)).doubleValue();
+            String variantSku  = deliveryModel.getValueAt(i, 5) != null
+                                 ? deliveryModel.getValueAt(i, 5).toString().trim() : "";
+            String batchName   = deliveryModel.getValueAt(i, 6) != null
+                                 ? deliveryModel.getValueAt(i, 6).toString().trim() : "";
             totalCost += qty * cost;
-            lines.add(new GrnDto.GrnLineDto(item.itemId(), item.itemName(), qty, cost, item.sellingPrice(), item.currentQty()));
+            lines.add(new GrnDto.GrnLineDto(item.itemId(), item.itemName(), qty, cost,
+                    sellPrice, item.currentQty(),
+                    variantSku.isEmpty() ? null : variantSku,
+                    batchName.isEmpty()  ? null : batchName));
         }
 
         String grnNo    = grnNoField.getText().trim();
@@ -311,10 +428,91 @@ public class ReceiveStockPanel extends JPanel {
         }.execute();
     }
 
+    private void adjustQty(int row, int delta) {
+        if (row < 0 || row >= deliveryModel.getRowCount()) return;
+        int cur = ((Number) deliveryModel.getValueAt(row, 2)).intValue();
+        deliveryModel.setValueAt(Math.max(1, cur + delta), row, 2);
+        updateSummary();
+    }
+
+    private void adjustCost(int row, int col, double delta) {
+        if (row < 0 || row >= deliveryModel.getRowCount()) return;
+        double cur = ((Number) deliveryModel.getValueAt(row, col)).doubleValue();
+        deliveryModel.setValueAt(Math.max(0, Math.round((cur + delta) * 100.0) / 100.0), row, col);
+        updateSummary();
+    }
+
+    // ── Qty button renderer ───────────────────────────────────────────────────
+
+    private static class QtyButtonRenderer extends JPanel implements TableCellRenderer {
+        private final JButton minus = new JButton("−");
+        private final JLabel  value = new JLabel("1", SwingConstants.CENTER);
+        private final JButton plus  = new JButton("+");
+
+        QtyButtonRenderer() {
+            setLayout(new BorderLayout(2, 0));
+            setBorder(new EmptyBorder(4, 4, 4, 4));
+            minus.setFont(minus.getFont().deriveFont(Font.BOLD, 12f));
+            minus.setFocusPainted(false);
+            minus.setPreferredSize(new Dimension(28, 26));
+            plus.setFont(plus.getFont().deriveFont(Font.BOLD, 12f));
+            plus.setFocusPainted(false);
+            plus.setPreferredSize(new Dimension(28, 26));
+            value.setFont(value.getFont().deriveFont(Font.BOLD, 13f));
+            add(minus, BorderLayout.WEST);
+            add(value, BorderLayout.CENTER);
+            add(plus,  BorderLayout.EAST);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table, Object val, boolean isSel, boolean hasFocus, int row, int col) {
+            value.setText(val != null ? val.toString() : "1");
+            setBackground(isSel ? table.getSelectionBackground() : table.getBackground());
+            setOpaque(true);
+            return this;
+        }
+    }
+
+    // ── Cost / Sell-price button renderer ────────────────────────────────────
+
+    private static class CostButtonRenderer extends JPanel implements TableCellRenderer {
+        private final JButton minus = new JButton("−");
+        private final JLabel  value = new JLabel("0.00", SwingConstants.CENTER);
+        private final JButton plus  = new JButton("+");
+
+        CostButtonRenderer() {
+            setLayout(new BorderLayout(2, 0));
+            setBorder(new EmptyBorder(4, 4, 4, 4));
+            minus.setFont(minus.getFont().deriveFont(Font.BOLD, 12f));
+            minus.setFocusPainted(false);
+            minus.setPreferredSize(new Dimension(28, 26));
+            plus.setFont(plus.getFont().deriveFont(Font.BOLD, 12f));
+            plus.setFocusPainted(false);
+            plus.setPreferredSize(new Dimension(28, 26));
+            value.setFont(value.getFont().deriveFont(Font.BOLD, 13f));
+            add(minus, BorderLayout.WEST);
+            add(value, BorderLayout.CENTER);
+            add(plus,  BorderLayout.EAST);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(
+                JTable table, Object val, boolean isSel, boolean hasFocus, int row, int col) {
+            double d = val instanceof Number n ? n.doubleValue() : 0;
+            value.setText(String.format("%.2f", d));
+            setBackground(isSel ? table.getSelectionBackground() : table.getBackground());
+            setOpaque(true);
+            return this;
+        }
+    }
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
     private CardPanel sectionCard(String title) {
         CardPanel c = new CardPanel(new BorderLayout(0, 10));
         ((JPanel)c).setBorder(new EmptyBorder(14, 14, 14, 14));
-        ((JPanel)c).setMaximumSize(new Dimension(Integer.MAX_VALUE, 300));
+        ((JPanel)c).setMaximumSize(new Dimension(Integer.MAX_VALUE, 400));
         ((JPanel)c).setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel t = new JLabel(title);
         t.setFont(t.getFont().deriveFont(Font.BOLD, 11f));
