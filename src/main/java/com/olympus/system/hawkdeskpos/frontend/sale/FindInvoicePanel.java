@@ -1,26 +1,31 @@
 package com.olympus.system.hawkdeskpos.frontend.sale;
 
 import com.olympus.system.hawkdeskpos.dto.InvoiceDto;
+import com.olympus.system.hawkdeskpos.dto.ReturnDto;
 import com.olympus.system.hawkdeskpos.dto.SaleLineDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
 import com.olympus.system.hawkdeskpos.frontend.components.StatusPill;
+import com.olympus.system.hawkdeskpos.service.ReturnService;
 import com.olympus.system.hawkdeskpos.service.SaleService;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
-import javax.swing.table.DefaultTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 import java.text.SimpleDateFormat;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.stream.Collectors;
 
 /**
- * Find Invoice — live search list + detail pane.
- * Loads recent invoices on entry; filters as you type.
+ * Find Invoice — search + date/cashier filters + detail pane with returns history.
  */
 public class FindInvoicePanel extends JPanel
         implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
@@ -31,28 +36,35 @@ public class FindInvoicePanel extends JPanel
     private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);
     private static final Color GREEN = new Color(0x2E, 0x7D, 0x32);
     private static final Color RED   = new Color(0xC6, 0x28, 0x28);
+    private static final Color AMBER = new Color(0xE6, 0x51, 0x00);
 
     private static final SimpleDateFormat DATE_FMT =
             new SimpleDateFormat("dd MMM yyyy  HH:mm");
 
-    private final SaleService saleService;
+    private final SaleService   saleService;
+    private final ReturnService returnService;
 
-    // Search
+    // Search & filter
     private JTextField searchField;
+    private JTextField cashierField;
+    private JSpinner   fromSpinner, toSpinner;
+    private JCheckBox  useDateFilterCheck;
     private Timer      debounce;
     private JLabel     resultCount;
 
     // Results table
     private DefaultTableModel tableModel;
     private JTable            table;
-    private List<InvoiceDto>  allResults = new ArrayList<>();
+    private List<InvoiceDto>  allResults    = new ArrayList<>();
+    private List<InvoiceDto>  filteredResults = new ArrayList<>();
 
     // Detail pane
     private JPanel detailContent;
     private JPanel detailPane;
 
-    public FindInvoicePanel(SaleService saleService) {
-        this.saleService = saleService;
+    public FindInvoicePanel(SaleService saleService, ReturnService returnService) {
+        this.saleService   = saleService;
+        this.returnService = returnService;
         setBackground(BG);
         setLayout(new BorderLayout());
         buildUI();
@@ -66,41 +78,45 @@ public class FindInvoicePanel extends JPanel
         JPanel root = new JPanel(new BorderLayout(0, 12));
         root.setOpaque(false);
         root.setBorder(new EmptyBorder(16, 16, 16, 16));
-
-        root.add(buildHeader(),  BorderLayout.NORTH);
-        root.add(buildBody(),    BorderLayout.CENTER);
+        root.add(buildHeader(), BorderLayout.NORTH);
+        root.add(buildBody(),   BorderLayout.CENTER);
         add(root);
     }
 
     private JPanel buildHeader() {
         JPanel header = new JPanel(new BorderLayout());
         header.setOpaque(false);
-
         JLabel title = new JLabel("Find Invoice");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 20f));
         header.add(title, BorderLayout.WEST);
-
+        JButton refreshBtn = new JButton("↺ Refresh");
+        refreshBtn.addActionListener(e -> { searchField.setText(""); cashierField.setText(""); loadRecent(); });
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_DASH));
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         btns.setOpaque(false);
+        btns.add(refreshBtn);
         btns.add(back);
         header.add(btns, BorderLayout.EAST);
         return header;
     }
 
     private JPanel buildBody() {
-        JPanel body = new JPanel(new BorderLayout(0, 10));
+        JPanel body = new JPanel(new BorderLayout(0, 8));
         body.setOpaque(false);
 
-        body.add(buildSearchBar(), BorderLayout.NORTH);
+        JPanel filters = new JPanel();
+        filters.setOpaque(false);
+        filters.setLayout(new BoxLayout(filters, BoxLayout.Y_AXIS));
+        filters.add(buildSearchBar());
+        filters.add(Box.createVerticalStrut(4));
+        filters.add(buildFilterBar());
+        body.add(filters, BorderLayout.NORTH);
 
-        // Left: results table  |  Right: detail
         JPanel split = new JPanel(new BorderLayout(14, 0));
         split.setOpaque(false);
         split.add(buildResultsTable(), BorderLayout.CENTER);
         split.add(buildDetailPane(),   BorderLayout.EAST);
-
         body.add(split, BorderLayout.CENTER);
         return body;
     }
@@ -111,7 +127,7 @@ public class FindInvoicePanel extends JPanel
         CardPanel card = new CardPanel(new BorderLayout(10, 0));
         ((JPanel) card).setBorder(new EmptyBorder(10, 14, 10, 14));
 
-        JLabel hint = new JLabel("Search by invoice number:");
+        JLabel hint = new JLabel("Invoice #:");
         hint.setForeground(TEXT2);
         hint.setFont(hint.getFont().deriveFont(13f));
         ((JPanel) card).add(hint, BorderLayout.WEST);
@@ -141,7 +157,55 @@ public class FindInvoicePanel extends JPanel
         resultCount.setForeground(TEXT2);
         resultCount.setFont(resultCount.getFont().deriveFont(12f));
         ((JPanel) card).add(resultCount, BorderLayout.EAST);
+        return card;
+    }
 
+    // ── Date + cashier filter bar ─────────────────────────────────────────────
+
+    private CardPanel buildFilterBar() {
+        CardPanel card = new CardPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
+        ((JPanel) card).setBorder(new EmptyBorder(4, 14, 4, 14));
+
+        useDateFilterCheck = new JCheckBox("Filter by date");
+        useDateFilterCheck.setOpaque(false);
+        useDateFilterCheck.addActionListener(e -> {
+            boolean on = useDateFilterCheck.isSelected();
+            fromSpinner.setEnabled(on);
+            toSpinner.setEnabled(on);
+            loadRecent();
+        });
+
+        fromSpinner = new JSpinner(new SpinnerDateModel());
+        fromSpinner.setEditor(new JSpinner.DateEditor(fromSpinner, "yyyy-MM-dd"));
+        fromSpinner.setPreferredSize(new Dimension(120, 28));
+        fromSpinner.setValue(toStartOfDay(LocalDate.now().minusMonths(1)));
+        fromSpinner.setEnabled(false);
+
+        toSpinner = new JSpinner(new SpinnerDateModel());
+        toSpinner.setEditor(new JSpinner.DateEditor(toSpinner, "yyyy-MM-dd"));
+        toSpinner.setPreferredSize(new Dimension(120, 28));
+        toSpinner.setValue(toEndOfDay(LocalDate.now()));
+        toSpinner.setEnabled(false);
+
+        JButton apply = new JButton("Apply");
+        apply.addActionListener(e -> loadRecent());
+
+        cashierField = new JTextField(12);
+        cashierField.putClientProperty("JTextField.placeholderText", "Cashier name…");
+        cashierField.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            @Override public void insertUpdate(javax.swing.event.DocumentEvent e) { applyInMemoryFilter(); }
+            @Override public void removeUpdate(javax.swing.event.DocumentEvent e) { applyInMemoryFilter(); }
+            @Override public void changedUpdate(javax.swing.event.DocumentEvent e) {}
+        });
+
+        ((JPanel) card).add(useDateFilterCheck);
+        ((JPanel) card).add(new JLabel("From:"));
+        ((JPanel) card).add(fromSpinner);
+        ((JPanel) card).add(new JLabel("To:"));
+        ((JPanel) card).add(toSpinner);
+        ((JPanel) card).add(apply);
+        ((JPanel) card).add(new JLabel("  Cashier:"));
+        ((JPanel) card).add(cashierField);
         return card;
     }
 
@@ -163,29 +227,23 @@ public class FindInvoicePanel extends JPanel
         table.getTableHeader().setForeground(TEXT2);
         table.setFont(table.getFont().deriveFont(13f));
 
-        // Column widths
         table.getColumnModel().getColumn(0).setPreferredWidth(150);
         table.getColumnModel().getColumn(1).setPreferredWidth(160);
         table.getColumnModel().getColumn(2).setPreferredWidth(110);
         table.getColumnModel().getColumn(3).setPreferredWidth(110);
         table.getColumnModel().getColumn(4).setPreferredWidth(80);
-        table.getColumnModel().getColumn(5).setPreferredWidth(75);
+        table.getColumnModel().getColumn(5).setPreferredWidth(90);
 
-        // Right-align total column
         DefaultTableCellRenderer rightAlign = new DefaultTableCellRenderer();
         rightAlign.setHorizontalAlignment(SwingConstants.RIGHT);
         table.getColumnModel().getColumn(3).setCellRenderer(rightAlign);
 
-        // Load detail on row selection
         table.getSelectionModel().addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting() && table.getSelectedRow() >= 0) {
                 int modelRow = table.convertRowIndexToModel(table.getSelectedRow());
-                if (modelRow < allResults.size()) {
-                    showDetail(allResults.get(modelRow));
-                }
+                if (modelRow < filteredResults.size()) showDetail(filteredResults.get(modelRow));
             }
         });
-
         table.setAutoCreateRowSorter(true);
 
         JScrollPane scroll = new JScrollPane(table);
@@ -193,7 +251,6 @@ public class FindInvoicePanel extends JPanel
 
         CardPanel card = new CardPanel(new BorderLayout(0, 0));
         ((JPanel) card).setBorder(new EmptyBorder(0, 0, 0, 0));
-
         JPanel titleRow = new JPanel(new BorderLayout());
         titleRow.setOpaque(false);
         titleRow.setBorder(new EmptyBorder(10, 14, 8, 14));
@@ -260,17 +317,16 @@ public class FindInvoicePanel extends JPanel
         info.setOpaque(false);
         info.setAlignmentX(Component.LEFT_ALIGNMENT);
         info.setMaximumSize(new Dimension(Integer.MAX_VALUE, 999));
-        addPair(info, "Date",     inv.date() != null ? DATE_FMT.format(inv.date()) : "—");
-        addPair(info, "Cashier",  inv.cashierName() != null ? inv.cashierName() : "—");
-        addPair(info, "Payment",  inv.paymentMethod());
+        addPair(info, "Date",    inv.date() != null ? DATE_FMT.format(inv.date()) : "—");
+        addPair(info, "Cashier", inv.cashierName() != null ? inv.cashierName() : "—");
+        addPair(info, "Payment", inv.paymentMethod());
         detailContent.add(info);
         detailContent.add(Box.createVerticalStrut(14));
         detailContent.add(separator());
         detailContent.add(Box.createVerticalStrut(10));
 
         // ── Line items ────────────────────────────────────────────────────────
-        JLabel itemsLbl = sectionLabel("ITEMS");
-        detailContent.add(itemsLbl);
+        detailContent.add(sectionLabel("ITEMS"));
         detailContent.add(Box.createVerticalStrut(6));
 
         if (inv.lines().isEmpty()) {
@@ -285,14 +341,11 @@ public class FindInvoicePanel extends JPanel
                 row.setOpaque(false);
                 row.setAlignmentX(Component.LEFT_ALIGNMENT);
                 row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 26));
-
                 JLabel nameQty = new JLabel(line.itemName() + "  ×" + line.qty());
                 nameQty.setFont(nameQty.getFont().deriveFont(13f));
-
-                JLabel price = new JLabel(String.format("Rs. %.2f", line.lineTotal()));
+                JLabel price = new JLabel("Rs. " + fmt(line.lineTotal()));
                 price.setFont(price.getFont().deriveFont(Font.BOLD, 13f));
                 price.setForeground(NAVY);
-
                 row.add(nameQty, BorderLayout.CENTER);
                 row.add(price,   BorderLayout.EAST);
                 detailContent.add(row);
@@ -309,17 +362,29 @@ public class FindInvoicePanel extends JPanel
         totals.setOpaque(false);
         totals.setAlignmentX(Component.LEFT_ALIGNMENT);
         totals.setMaximumSize(new Dimension(Integer.MAX_VALUE, 999));
-        if (inv.discount() > 0) {
-            addPair(totals, "Discount", String.format("Rs. %.2f", inv.discount()));
-        }
-        addAmountPair(totals, "TOTAL", String.format("Rs. %.2f", inv.total()), true);
+        if (inv.discount() > 0)
+            addPair(totals, "Discount", "Rs. " + fmt(inv.discount()));
+        addAmountPair(totals, "TOTAL", "Rs. " + fmt(inv.total()), true);
         if (inv.paid() > 0) {
-            addAmountPair(totals, "Paid", String.format("Rs. %.2f", inv.paid()), false);
+            addAmountPair(totals, "Paid", "Rs. " + fmt(inv.paid()), false);
             double change = inv.paid() - inv.total();
-            if (change > 0) addAmountPair(totals, "Change", String.format("Rs. %.2f", change), false);
+            if (change > 0) addAmountPair(totals, "Change", "Rs. " + fmt(change), false);
         }
         detailContent.add(totals);
-        detailContent.add(Box.createVerticalStrut(16));
+        detailContent.add(Box.createVerticalStrut(14));
+
+        // ── Returns history (async) ───────────────────────────────────────────
+        detailContent.add(separator());
+        detailContent.add(Box.createVerticalStrut(10));
+        detailContent.add(sectionLabel("RETURNS"));
+        detailContent.add(Box.createVerticalStrut(6));
+
+        JLabel returnsPlaceholder = new JLabel("Loading returns…");
+        returnsPlaceholder.setForeground(TEXT2);
+        returnsPlaceholder.setFont(returnsPlaceholder.getFont().deriveFont(11f));
+        returnsPlaceholder.setAlignmentX(Component.LEFT_ALIGNMENT);
+        detailContent.add(returnsPlaceholder);
+        detailContent.add(Box.createVerticalStrut(10));
 
         // ── Actions ───────────────────────────────────────────────────────────
         JButton reprint = new JButton("Reprint Receipt");
@@ -330,71 +395,162 @@ public class FindInvoicePanel extends JPanel
                         JOptionPane.INFORMATION_MESSAGE));
         detailContent.add(reprint);
 
-        boolean canReturn = !"RETURNED".equals(inv.stat()) && !"Void".equals(inv.stat());
+        boolean canReturn = !"Full Return".equals(inv.stat()) && !"Void".equals(inv.stat());
         if (canReturn) {
             detailContent.add(Box.createVerticalStrut(6));
             JButton ret = new JButton("Process Return");
             ret.setAlignmentX(Component.LEFT_ALIGNMENT);
             ret.setMaximumSize(new Dimension(Integer.MAX_VALUE, 34));
             ret.setForeground(RED);
-            ret.addActionListener(e -> Home.navigate(Home.CARD_RETURNS));
+            ret.addActionListener(e -> Home.navigateToReturnWithInvoice(inv.invoiceNo()));
             detailContent.add(ret);
         }
 
         detailContent.revalidate();
         detailContent.repaint();
+
+        // Load returns asynchronously and replace placeholder
+        new SwingWorker<List<ReturnDto>, Void>() {
+            @Override protected List<ReturnDto> doInBackground() {
+                return returnService.getReturnsForInvoice(inv.invoiceNo());
+            }
+            @Override protected void done() {
+                try {
+                    List<ReturnDto> returns = get();
+                    // Replace placeholder with actual return rows
+                    int idx = getComponentIndex(detailContent, returnsPlaceholder);
+                    if (idx >= 0) detailContent.remove(idx);
+                    if (returns.isEmpty()) {
+                        JLabel none = new JLabel("No returns for this invoice.");
+                        none.setForeground(TEXT2);
+                        none.setFont(none.getFont().deriveFont(11f));
+                        none.setAlignmentX(Component.LEFT_ALIGNMENT);
+                        detailContent.add(none, idx < 0 ? detailContent.getComponentCount() : idx);
+                    } else {
+                        SimpleDateFormat sf = new SimpleDateFormat("dd MMM yyyy HH:mm");
+                        int insertAt = idx < 0 ? detailContent.getComponentCount() : idx;
+                        for (int i = returns.size() - 1; i >= 0; i--) {
+                            ReturnDto r = returns.get(i);
+                            JPanel rrow = buildReturnRow(r, sf);
+                            detailContent.add(rrow, insertAt);
+                        }
+                    }
+                    detailContent.revalidate();
+                    detailContent.repaint();
+                } catch (Exception ignored) {}
+            }
+        }.execute();
+    }
+
+    private JPanel buildReturnRow(ReturnDto r, SimpleDateFormat sf) {
+        JPanel row = new JPanel(new GridLayout(0, 1, 0, 1));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+        row.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 3, 0, 0, AMBER),
+                new EmptyBorder(4, 8, 4, 4)));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 999));
+
+        String dateStr = r.returnDate() != null ? sf.format(r.returnDate()) : "—";
+        JLabel line1 = new JLabel(r.itemName() + "  ×" + r.qty()
+                + "  —  " + r.refundMethod());
+        line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
+        JLabel line2 = new JLabel(r.reason() + "  ·  " + dateStr
+                + "  ·  by " + r.cashierName());
+        line2.setFont(line2.getFont().deriveFont(11f));
+        line2.setForeground(TEXT2);
+
+        row.add(line1);
+        row.add(line2);
+        return row;
+    }
+
+    /** Returns the index of a component in a container, or -1 if not found. */
+    private static int getComponentIndex(Container parent, Component target) {
+        for (int i = 0; i < parent.getComponentCount(); i++) {
+            if (parent.getComponent(i) == target) return i;
+        }
+        return -1;
     }
 
     // ── Data loading ──────────────────────────────────────────────────────────
 
     private void scheduleSearch() {
         if (debounce != null && debounce.isRunning()) debounce.stop();
-        debounce = new Timer(250, e -> performSearch(searchField.getText().trim()));
+        debounce = new Timer(250, e -> loadRecent());
         debounce.setRepeats(false);
         debounce.start();
     }
 
     private void loadRecent() {
-        searchField.setText("");
-        performSearch("");
-    }
-
-    private void performSearch(String query) {
+        String query   = searchField.getText().trim();
+        Date   from    = useDateFilterCheck.isSelected() ? (Date) fromSpinner.getValue() : null;
+        Date   to      = useDateFilterCheck.isSelected() ? (Date) toSpinner.getValue()   : null;
         resultCount.setText("Searching…");
+
         new SwingWorker<List<InvoiceDto>, Void>() {
             @Override protected List<InvoiceDto> doInBackground() {
-                return saleService.listInvoices(query, null, null, null);
+                return saleService.listInvoices(query, from, to, null);
             }
             @Override protected void done() {
                 try {
                     allResults = get();
                 } catch (Exception ex) {
                     allResults = new ArrayList<>();
-                    System.err.println("FindInvoicePanel.performSearch: " + ex.getMessage());
                 }
-                populateTable();
+                applyInMemoryFilter();
             }
         }.execute();
+    }
+
+    private void applyInMemoryFilter() {
+        String cashier = cashierField.getText().trim().toLowerCase();
+        if (cashier.isEmpty()) {
+            filteredResults = allResults;
+        } else {
+            filteredResults = allResults.stream()
+                    .filter(inv -> inv.cashierName() != null
+                            && inv.cashierName().toLowerCase().contains(cashier))
+                    .collect(Collectors.toList());
+        }
+        populateTable();
     }
 
     private void populateTable() {
         tableModel.setRowCount(0);
         showPlaceholder();
-        for (InvoiceDto inv : allResults) {
+        for (InvoiceDto inv : filteredResults) {
             tableModel.addRow(new Object[]{
                     inv.invoiceNo(),
                     inv.date() != null ? DATE_FMT.format(inv.date()) : "—",
                     inv.cashierName() != null ? inv.cashierName() : "—",
-                    String.format("%.2f", inv.total()),
+                    fmt(inv.total()),
                     inv.paymentMethod(),
                     inv.stat()
             });
         }
-        int n = allResults.size();
+        int n = filteredResults.size();
         resultCount.setText(n == 0 ? "No results" : n + " invoice" + (n == 1 ? "" : "s"));
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    // ── Date helpers ──────────────────────────────────────────────────────────
+
+    private static Date toStartOfDay(LocalDate d) {
+        return Date.from(d.atStartOfDay(ZoneId.systemDefault()).toInstant());
+    }
+
+    private static Date toEndOfDay(LocalDate d) {
+        return Date.from(d.atTime(23, 59, 59).atZone(ZoneId.systemDefault()).toInstant());
+    }
+
+    // ── Number formatting ─────────────────────────────────────────────────────
+
+    /** Format with thousands separator and 2 decimal places. e.g. 12345.6 → "12,345.60" */
+    private static String fmt(double v) {
+        return String.format("%,.2f", v);
+    }
+
+    // ── UI helpers ────────────────────────────────────────────────────────────
 
     private void addPair(JPanel panel, String label, String value) {
         JLabel l = new JLabel(label);

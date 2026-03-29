@@ -30,9 +30,10 @@ import java.util.List;
  *   3  Cost Price     [−] cost [+]
  *   4  Sell Price     [−] price [+]
  *   5  Variant SKU    editable — leave blank to update existing stock; fill to create a named variant
- *   6  Batch          editable — custom batch/lot label; defaults to GRN number if blank
- *   7  Current Stock  (read-only)
- *   8  New Stock      (read-only, auto-calculated)
+ *   6  Batch #        editable — auto-generated B{YYYY}-{NNN}; can be overridden
+ *   7  Expiry         editable — optional expiry date (YYYY-MM-DD)
+ *   8  Current Stock  (read-only)
+ *   9  New Stock      (read-only, auto-calculated)
  */
 public class ReceiveStockPanel extends JPanel {
 
@@ -66,6 +67,18 @@ public class ReceiveStockPanel extends JPanel {
         generateGrnNo();
     }
 
+    /** Called by Home.navigateToReceiveStockWithItem to open a fresh GRN with this item pre-loaded. */
+    public void preload(ItemDto item) {
+        reset();
+        addItemToDelivery(item);
+    }
+
+    /** Called by Home.navigateToReceiveStockWithItems to open a fresh GRN with multiple items pre-loaded. */
+    public void preloadMultiple(java.util.List<ItemDto> items) {
+        reset();
+        for (ItemDto item : items) addItemToDelivery(item);
+    }
+
     private void buildUI() {
         JPanel root = new JPanel(new BorderLayout(14, 0));
         root.setOpaque(false);
@@ -78,50 +91,59 @@ public class ReceiveStockPanel extends JPanel {
         header.add(title, BorderLayout.WEST);
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_STOCK));
+        JButton refreshBtn = new JButton("↺ Refresh");
+        refreshBtn.addActionListener(e -> reset());
         JPanel hBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         hBtns.setOpaque(false);
+        hBtns.add(refreshBtn);
         hBtns.add(back);
         header.add(hBtns, BorderLayout.EAST);
         root.add(header, BorderLayout.NORTH);
 
-        JPanel content = new JPanel(new BorderLayout(14, 0));
-        content.setOpaque(false);
-
-        JPanel left = new JPanel();
+        // ── Left: GRN Details (NORTH) + Delivery Items (CENTER) + actions (SOUTH)
+        JPanel left = new JPanel(new BorderLayout(0, 12));
         left.setOpaque(false);
-        left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
-        left.add(buildGrnHeader());
-        left.add(Box.createVerticalStrut(12));
-        left.add(buildDeliverySection());
-        left.add(Box.createVerticalStrut(16));
-        left.add(buildActionRow());
+        left.add(buildGrnHeader(),    BorderLayout.NORTH);
+        left.add(buildDeliverySection(), BorderLayout.CENTER);
+        left.add(buildActionRow(),    BorderLayout.SOUTH);
 
-        JScrollPane leftScroll = new JScrollPane(left);
-        leftScroll.setBorder(null);
-        leftScroll.setOpaque(false);
-        leftScroll.getViewport().setOpaque(false);
-        content.add(leftScroll, BorderLayout.CENTER);
+        // ── Right: GRN Summary (wraps to content height in NORTH) ─────────────
+        JPanel sidebarOuter = new JPanel(new BorderLayout());
+        sidebarOuter.setOpaque(false);
+        sidebarOuter.add(buildSidebar(), BorderLayout.NORTH);
 
-        JPanel sidebar = buildSidebar();
-        sidebar.setPreferredSize(new Dimension(240, 0));
-        content.add(sidebar, BorderLayout.EAST);
+        // ── JSplitPane: left 3/4, right 1/4, adjustable ───────────────────────
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, sidebarOuter);
+        split.setResizeWeight(0.75);
+        split.setBorder(null);
+        split.setDividerSize(5);
+        split.setOpaque(false);
+        split.addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
+                    && split.isShowing()) {
+                SwingUtilities.invokeLater(() -> split.setDividerLocation(0.75));
+            }
+        });
 
-        root.add(content, BorderLayout.CENTER);
+        root.add(split, BorderLayout.CENTER);
         add(root);
         generateGrnNo();
     }
 
     private CardPanel buildGrnHeader() {
         CardPanel c = sectionCard("GRN DETAILS");
-        JPanel grid = new JPanel(new GridLayout(1, 3, 10, 0));
-        grid.setOpaque(false);
 
         grnNoField = new JTextField();
         grnNoField.setEditable(false);
         grnNoField.setBackground(new Color(0xF7, 0xF8, 0xFA));
+        grnNoField.setPreferredSize(new Dimension(0, 28));
         supplierField  = new JTextField();
+        supplierField.setPreferredSize(new Dimension(0, 28));
         referenceField = new JTextField();
+        referenceField.setPreferredSize(new Dimension(0, 28));
 
+        JPanel grid = new JPanel(new GridLayout(1, 3, 10, 0));
+        grid.setOpaque(false);
         grid.add(labeled("GRN Number",         grnNoField));
         grid.add(labeled("Supplier Name *",    supplierField));
         grid.add(labeled("Supplier Reference", referenceField));
@@ -142,10 +164,10 @@ public class ReceiveStockPanel extends JPanel {
         searchRow.add(search);
         searchRow.add(hint);
 
-        // Cols 5 (Variant SKU) and 6 (Batch) are editable; others use custom renderers + mouse listener
-        String[] cols = {"Item Name", "SKU", "Qty", "Cost (Rs.)", "Sell (Rs.)", "Variant SKU", "Batch", "Current", "New Stock"};
+        // Cols 5 (Variant SKU), 6 (Batch#), 7 (Expiry) are editable; others use custom renderers + mouse listener
+        String[] cols = {"Item Name", "SKU", "Qty", "Cost (Rs.)", "Sell (Rs.)", "Variant SKU", "Batch #", "Expiry (YYYY-MM-DD)", "Current", "New Stock"};
         deliveryModel = new DefaultTableModel(cols, 0) {
-            @Override public boolean isCellEditable(int r, int c) { return c == 5 || c == 6; }
+            @Override public boolean isCellEditable(int r, int c) { return c == 5 || c == 6 || c == 7; }
         };
         // NOTE: no TableModelListener — updateSummary() writes col 7 which would cause
         // infinite recursion. updateSummary() is called explicitly after each modification.
@@ -173,14 +195,17 @@ public class ReceiveStockPanel extends JPanel {
         deliveryTable.getColumnModel().getColumn(4).setMinWidth(110);
 
         // Variant SKU column — normal text editing
-        deliveryTable.getColumnModel().getColumn(5).setPreferredWidth(110);
+        deliveryTable.getColumnModel().getColumn(5).setPreferredWidth(100);
 
-        // Batch column — normal text editing
-        deliveryTable.getColumnModel().getColumn(6).setPreferredWidth(110);
+        // Batch # column — pre-filled with auto-generated number, editable
+        deliveryTable.getColumnModel().getColumn(6).setPreferredWidth(100);
+
+        // Expiry column — optional date string YYYY-MM-DD
+        deliveryTable.getColumnModel().getColumn(7).setPreferredWidth(120);
 
         // Current / New Stock — narrow
-        deliveryTable.getColumnModel().getColumn(7).setPreferredWidth(70);
-        deliveryTable.getColumnModel().getColumn(8).setPreferredWidth(80);
+        deliveryTable.getColumnModel().getColumn(8).setPreferredWidth(65);
+        deliveryTable.getColumnModel().getColumn(9).setPreferredWidth(75);
 
         // Mouse listener for qty (col 2), cost (col 3), sell price (col 4)
         deliveryTable.addMouseListener(new MouseAdapter() {
@@ -228,7 +253,6 @@ public class ReceiveStockPanel extends JPanel {
 
         JScrollPane scroll = new JScrollPane(deliveryTable);
         scroll.setBorder(BorderFactory.createLineBorder(new Color(0xE2, 0xE5, 0xEA)));
-        scroll.setPreferredSize(new Dimension(0, 220));
 
         JPanel inner = new JPanel(new BorderLayout(0, 8));
         inner.setOpaque(false);
@@ -269,13 +293,28 @@ public class ReceiveStockPanel extends JPanel {
             }
         }
         deliveryItems.add(item);
+        // Pre-generate a batch number in background
+        int rowIndex = deliveryItems.size() - 1;
         deliveryModel.addRow(new Object[]{
                 item.itemName(), item.sku(), 1,
                 item.costPrice(), item.sellingPrice(),
                 "",              // Variant SKU (col 5)
-                "",              // Batch       (col 6)
+                "…",             // Batch #     (col 6) — placeholder while generating
+                "",              // Expiry      (col 7)
                 item.currentQty(), item.currentQty() + 1
         });
+        new SwingWorker<String, Void>() {
+            @Override protected String doInBackground() { return stockService.generateBatchNo(); }
+            @Override protected void done() {
+                try {
+                    String num = get();
+                    if (rowIndex < deliveryModel.getRowCount() &&
+                            "…".equals(deliveryModel.getValueAt(rowIndex, 6))) {
+                        deliveryModel.setValueAt(num, rowIndex, 6);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }.execute();
         updateSummary();
     }
 
@@ -296,18 +335,15 @@ public class ReceiveStockPanel extends JPanel {
     }
 
     private JPanel buildSidebar() {
-        JPanel sidebar = new JPanel();
-        sidebar.setOpaque(false);
-        sidebar.setLayout(new BoxLayout(sidebar, BoxLayout.Y_AXIS));
-
         CardPanel c = new CardPanel(new BorderLayout(0, 10));
         ((JPanel)c).setBorder(new EmptyBorder(14, 14, 14, 14));
+
         JLabel title = new JLabel("GRN SUMMARY");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 11f));
         title.setForeground(TEXT2);
         ((JPanel)c).add(title, BorderLayout.NORTH);
 
-        JPanel stats = new JPanel(new GridLayout(4, 1, 0, 12));
+        JPanel stats = new JPanel(new GridLayout(4, 1, 0, 10));
         stats.setOpaque(false);
         summaryGrn   = new JLabel("—");
         summaryLines = new JLabel("0 lines");
@@ -318,19 +354,19 @@ public class ReceiveStockPanel extends JPanel {
         summaryCost.setForeground(NAVY);
         stats.add(statRow("GRN No.", summaryGrn));
         stats.add(statRow("Lines",   summaryLines));
-        stats.add(statRow("Total Qty",summaryQty));
-        stats.add(statRow("Est. Cost",summaryCost));
+        stats.add(statRow("Total Qty", summaryQty));
+        stats.add(statRow("Est. Cost", summaryCost));
         ((JPanel)c).add(stats, BorderLayout.CENTER);
 
-        JLabel variantNote = new JLabel("<html><font color='#5A6070' size='2'>" +
-                "<b>Variant SKU</b> — fill to create a new<br>price variant for the same item.<br><br>" +
-                "<b>Batch</b> — optional label (e.g. LOT-001,<br>expiry date). Defaults to GRN number." +
+        JLabel hint = new JLabel("<html><font color='#5A6070' size='2'>" +
+                "<b>Variant SKU</b> — create a new price<br>variant for the same item.<br>" +
+                "<b>Batch #</b> — auto-generated; override<br>if needed.<br>" +
+                "<b>Expiry</b> — YYYY-MM-DD (optional)." +
                 "</font></html>");
-        variantNote.setBorder(new EmptyBorder(10, 0, 0, 0));
-        ((JPanel)c).add(variantNote, BorderLayout.SOUTH);
+        hint.setBorder(new EmptyBorder(8, 0, 0, 0));
+        ((JPanel)c).add(hint, BorderLayout.SOUTH);
 
-        sidebar.add(c);
-        return sidebar;
+        return (JPanel) c;
     }
 
     private JPanel statRow(String label, JLabel value) {
@@ -356,7 +392,7 @@ public class ReceiveStockPanel extends JPanel {
             totalCost += qty * cost;
             if (i < deliveryItems.size()) {
                 int current = deliveryItems.get(i).currentQty();
-                deliveryModel.setValueAt(current + qty, i, 8); // col 8 = New Stock
+                deliveryModel.setValueAt(current + qty, i, 9); // col 9 = New Stock
             }
         }
         summaryQty.setText(totalQty + " units");
@@ -386,11 +422,18 @@ public class ReceiveStockPanel extends JPanel {
                                  ? deliveryModel.getValueAt(i, 5).toString().trim() : "";
             String batchName   = deliveryModel.getValueAt(i, 6) != null
                                  ? deliveryModel.getValueAt(i, 6).toString().trim() : "";
+            String expiryStr   = deliveryModel.getValueAt(i, 7) != null
+                                 ? deliveryModel.getValueAt(i, 7).toString().trim() : "";
+            java.util.Date expiryDate = null;
+            if (!expiryStr.isEmpty()) {
+                try { expiryDate = java.sql.Date.valueOf(expiryStr); } catch (Exception ignored) {}
+            }
             totalCost += qty * cost;
             lines.add(new GrnDto.GrnLineDto(item.itemId(), item.itemName(), qty, cost,
                     sellPrice, item.currentQty(),
                     variantSku.isEmpty() ? null : variantSku,
-                    batchName.isEmpty()  ? null : batchName));
+                    batchName.isEmpty()  ? null : batchName,
+                    expiryDate));
         }
 
         String grnNo    = grnNoField.getText().trim();
@@ -410,7 +453,7 @@ public class ReceiveStockPanel extends JPanel {
                     get();
                     JOptionPane.showMessageDialog(ReceiveStockPanel.this,
                             "GRN " + grnNo + " saved.", "GRN Saved", JOptionPane.INFORMATION_MESSAGE);
-                    Home.navigate(Home.CARD_STOCK);
+                    reset();
                 } catch (Exception ex) {
                     JOptionPane.showMessageDialog(ReceiveStockPanel.this,
                             "Failed: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
@@ -512,8 +555,6 @@ public class ReceiveStockPanel extends JPanel {
     private CardPanel sectionCard(String title) {
         CardPanel c = new CardPanel(new BorderLayout(0, 10));
         ((JPanel)c).setBorder(new EmptyBorder(14, 14, 14, 14));
-        ((JPanel)c).setMaximumSize(new Dimension(Integer.MAX_VALUE, 400));
-        ((JPanel)c).setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel t = new JLabel(title);
         t.setFont(t.getFont().deriveFont(Font.BOLD, 11f));
         t.setForeground(TEXT2);

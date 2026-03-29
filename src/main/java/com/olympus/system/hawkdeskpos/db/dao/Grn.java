@@ -14,6 +14,10 @@ public class Grn implements Serializable {
     private Integer no;
 
     @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batch_id")
+    private ItemBatch batchObj;
+
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "item_id")
     private Item item;
 
@@ -39,6 +43,8 @@ public class Grn implements Serializable {
 
     public Integer getNo() { return no; }
     public void setNo(Integer no) { this.no = no; }
+    public ItemBatch getBatchObj() { return batchObj; }
+    public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public Item getItem() { return item; }
     public void setItem(Item item) { this.item = item; }
     public Grninfo getGrninfo() { return grninfo; }

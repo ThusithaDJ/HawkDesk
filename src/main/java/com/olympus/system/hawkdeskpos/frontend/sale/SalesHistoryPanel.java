@@ -1,13 +1,16 @@
 package com.olympus.system.hawkdeskpos.frontend.sale;
 
 import com.olympus.system.hawkdeskpos.dto.InvoiceDto;
+import com.olympus.system.hawkdeskpos.dto.ReturnDto;
+import com.olympus.system.hawkdeskpos.dto.SaleLineDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
+import com.olympus.system.hawkdeskpos.service.ReturnService;
 import com.olympus.system.hawkdeskpos.service.SaleService;
 
-import com.olympus.system.hawkdeskpos.dto.SaleLineDto;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.MatteBorder;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.text.SimpleDateFormat;
@@ -19,19 +22,22 @@ import java.util.List;
 
 /**
  * Sales History screen.
- * Period selector (Today default) + search + date range + sortable table + detail panel.
+ * Period selector (Today default) + search + date range + sortable table + detail panel (1/4 width).
  */
 public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
     private static final Color BG    = new Color(0xF0, 0xF2, 0xF5);
     private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);
     private static final Color NAVY  = new Color(0x1E, 0x3A, 0x5F);
+    private static final Color AMBER = new Color(0xB4, 0x5B, 0x00);
+    private static final Color AMBER_BG = new Color(0xFF, 0xF3, 0xCD);
 
     private static final String[] PERIODS = {
             "Today", "This Week", "Last Week", "This Month", "Last Month", "This Year", "Custom"
     };
 
-    private final SaleService saleService;
+    private final SaleService   saleService;
+    private final ReturnService returnService;
 
     private JLabel todayRevLabel, txCountLabel, weekRevLabel, returnsLabel;
     private JTextField searchField;
@@ -43,14 +49,15 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
     private JTable table;
     private List<InvoiceDto> allInvoices;
     private List<InvoiceDto> displayedInvoices;
-    private JPanel detailPanel;
+    private JPanel detailContent;  // inner panel inside the right card — rebuilt on each selection
 
     private static final String[] COLS = {
             "Invoice #", "Date/Time", "Cashier", "Items", "Payment", "Amount (Rs.)", "Status"
     };
 
-    public SalesHistoryPanel(SaleService saleService) {
-        this.saleService = saleService;
+    public SalesHistoryPanel(SaleService saleService, ReturnService returnService) {
+        this.saleService   = saleService;
+        this.returnService = returnService;
         setBackground(BG);
         setLayout(new BorderLayout());
         buildUI();
@@ -96,10 +103,6 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         statBar.add(statCard("Returns (Total)", "—"));
         returnsLabel  = valueLabel(statBar);
 
-        // Main split
-        JPanel content = new JPanel(new BorderLayout(10, 0));
-        content.setOpaque(false);
-
         // Left: filters + table
         JPanel left = new JPanel(new BorderLayout(0, 8));
         left.setOpaque(false);
@@ -131,18 +134,31 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         ((JPanel)tableCard).setBorder(new EmptyBorder(0, 0, 0, 0));
         ((JPanel)tableCard).add(scroll, BorderLayout.CENTER);
         left.add(tableCard, BorderLayout.CENTER);
-        content.add(left, BorderLayout.CENTER);
 
-        // Right: detail panel
-        detailPanel = buildDetailPanel();
-        detailPanel.setPreferredSize(new Dimension(360, 0));
-        detailPanel.setVisible(false);
-        content.add(detailPanel, BorderLayout.EAST);
+        // Right: detail panel (placeholder) — will take 1/4 via JSplitPane
+        detailContent = buildEmptyDetailContent();
+        CardPanel rightCard = new CardPanel(new BorderLayout(0, 10));
+        ((JPanel)rightCard).setBorder(new EmptyBorder(14, 14, 14, 14));
+        ((JPanel)rightCard).add(detailContent, BorderLayout.CENTER);
+
+        // JSplitPane: left 3/4, right 1/4
+        JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, rightCard);
+        split.setResizeWeight(0.75);
+        split.setBorder(null);
+        split.setDividerSize(5);
+        split.setOpaque(false);
+        // Set proportional location once the panel is shown
+        split.addHierarchyListener(e -> {
+            if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
+                    && split.isShowing()) {
+                SwingUtilities.invokeLater(() -> split.setDividerLocation(0.75));
+            }
+        });
 
         JPanel main = new JPanel(new BorderLayout(0, 10));
         main.setOpaque(false);
         main.add(statBar, BorderLayout.NORTH);
-        main.add(content, BorderLayout.CENTER);
+        main.add(split,   BorderLayout.CENTER);
 
         root.add(main, BorderLayout.CENTER);
         add(root);
@@ -153,7 +169,6 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         JPanel wrapper = new JPanel(new BorderLayout(0, 6));
         wrapper.setOpaque(false);
 
-        // Row 1: period + payment + search
         CardPanel row1 = new CardPanel(new FlowLayout(FlowLayout.LEFT, 10, 8));
         ((JPanel)row1).setBorder(new EmptyBorder(4, 10, 4, 10));
 
@@ -184,7 +199,6 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         ((JPanel)row1).add(searchField);
         wrapper.add(row1, BorderLayout.NORTH);
 
-        // Row 2: custom date range (hidden by default)
         customDatePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 10, 6));
         customDatePanel.setOpaque(false);
         customDatePanel.setVisible(false);
@@ -199,7 +213,6 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         toSpinner.setEditor(new JSpinner.DateEditor(toSpinner, "yyyy-MM-dd"));
         toSpinner.setPreferredSize(new Dimension(130, 28));
 
-        // Default from/to to today
         fromSpinner.setValue(toStartOfDay(LocalDate.now()));
         toSpinner.setValue(toEndOfDay(LocalDate.now()));
 
@@ -240,9 +253,9 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
             @Override protected void done() {
                 try {
                     allInvoices = get();
-                    todayRevLabel.setText(String.format("Rs. %.2f", todayRev));
+                    todayRevLabel.setText(String.format("Rs. %,.2f", todayRev));
                     txCountLabel.setText(String.valueOf(todayTx));
-                    weekRevLabel.setText(String.format("Rs. %.2f", weekRev));
+                    weekRevLabel.setText(String.format("Rs. %,.2f", weekRev));
                     returnsLabel.setText(String.valueOf(returns));
                     applyFilter();
                 } catch (Exception e) {
@@ -278,7 +291,7 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
                     inv.cashierName() != null ? inv.cashierName() : "—",
                     inv.lines().size(),
                     inv.paymentMethod(),
-                    String.format("%.2f", inv.total()),
+                    String.format("%,.2f", inv.total()),
                     inv.stat()
             });
         }
@@ -317,57 +330,57 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
 
     // ── Detail panel ──────────────────────────────────────────────────────────
 
-    private JPanel buildDetailPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setOpaque(false);
-
-        CardPanel c = new CardPanel(new BorderLayout(0, 10));
-        ((JPanel)c).setBorder(new EmptyBorder(14, 14, 14, 14));
+    private JPanel buildEmptyDetailContent() {
+        JPanel p = new JPanel(new BorderLayout());
+        p.setOpaque(false);
         JLabel title = new JLabel("INVOICE DETAIL");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 11f));
         title.setForeground(TEXT2);
-        ((JPanel)c).add(title, BorderLayout.NORTH);
+        p.add(title, BorderLayout.NORTH);
         JLabel placeholder = new JLabel("<html><center>Select a row<br>to view details</center></html>");
         placeholder.setForeground(TEXT2);
         placeholder.setHorizontalAlignment(SwingConstants.CENTER);
-        ((JPanel)c).add(placeholder, BorderLayout.CENTER);
-        panel.add(c, BorderLayout.CENTER);
-        return panel;
+        p.add(placeholder, BorderLayout.CENTER);
+        return p;
     }
 
     private void showDetail(InvoiceDto inv) {
-        detailPanel.removeAll();
-        detailPanel.setVisible(true);
+        // Find the parent CardPanel (right card) and replace its content
+        Container rightCard = detailContent.getParent();
+        if (rightCard == null) return;
 
-        CardPanel c = new CardPanel(new BorderLayout(0, 8));
-        ((JPanel)c).setBorder(new EmptyBorder(14, 14, 14, 14));
+        rightCard.removeAll();
+        ((JPanel)rightCard).setBorder(new EmptyBorder(14, 14, 14, 14));
 
-        // ── Title ────────────────────────────────────────────────────────────
+        JPanel panel = new JPanel(new BorderLayout(0, 8));
+        panel.setOpaque(false);
+
+        // Title
         JLabel title = new JLabel("INVOICE DETAIL");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 11f));
         title.setForeground(TEXT2);
-        ((JPanel)c).add(title, BorderLayout.NORTH);
+        panel.add(title, BorderLayout.NORTH);
 
-        // ── Scrollable body (header + items table + totals) ───────────────────
+        // Scrollable body
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 
         // Header fields
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
         JPanel info = new JPanel(new GridLayout(0, 1, 0, 5));
         info.setOpaque(false);
         info.setAlignmentX(Component.LEFT_ALIGNMENT);
         info.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
         info.setBorder(new EmptyBorder(0, 0, 10, 0));
         info.add(detailRow("Invoice #", inv.invoiceNo()));
-        info.add(detailRow("Date",      inv.date() != null
-                ? new SimpleDateFormat("yyyy-MM-dd HH:mm").format(inv.date()) : "—"));
-        info.add(detailRow("Cashier",   inv.cashierName() != null ? inv.cashierName() : "—"));
-        info.add(detailRow("Payment",   inv.paymentMethod()));
-        info.add(detailRow("Status",    inv.stat()));
+        info.add(detailRow("Date",  inv.date() != null ? sdf.format(inv.date()) : "—"));
+        info.add(detailRow("Cashier", inv.cashierName() != null ? inv.cashierName() : "—"));
+        info.add(detailRow("Payment", inv.paymentMethod()));
+        info.add(detailRow("Status",  inv.stat()));
         body.add(info);
 
-        // Items section label
+        // Items section
         JLabel itemsTitle = new JLabel("ITEMS");
         itemsTitle.setFont(itemsTitle.getFont().deriveFont(Font.BOLD, 10f));
         itemsTitle.setForeground(TEXT2);
@@ -375,13 +388,12 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         body.add(itemsTitle);
         body.add(Box.createVerticalStrut(4));
 
-        // Items table
-        String[] lineCols = {"Item", "SKU", "Batch", "Qty", "Price", "Total"};
+        String[] lineCols = {"Item", "Batch", "Qty", "Price", "Total"};
         DefaultTableModel lineModel = new DefaultTableModel(lineCols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
         JTable lineTable = new JTable(lineModel);
-        lineTable.setRowHeight(26);
+        lineTable.setRowHeight(24);
         lineTable.setShowGrid(false);
         lineTable.setIntercellSpacing(new Dimension(0, 0));
         lineTable.getTableHeader().setFont(lineTable.getFont().deriveFont(Font.BOLD, 10f));
@@ -391,19 +403,17 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         for (SaleLineDto line : inv.lines()) {
             lineModel.addRow(new Object[]{
                     line.itemName(),
-                    line.sku() != null ? line.sku() : "",
                     line.batch() != null ? line.batch() : "",
                     line.qty(),
-                    String.format("%.2f", line.unitPrice()),
-                    String.format("%.2f", line.lineTotal())
+                    String.format("%,.2f", line.unitPrice()),
+                    String.format("%,.2f", line.lineTotal())
             });
         }
 
-        // Show up to 6 rows then scroll — fix height, let BoxLayout stretch width
-        int visRows = Math.min(Math.max(inv.lines().size(), 1), 6);
-        int scrollH  = 24 + visRows * 26 + 2; // header + rows
+        int visRows = Math.min(Math.max(inv.lines().size(), 1), 5);
+        int scrollH = 22 + visRows * 24 + 2;
         JScrollPane lineScroll = new JScrollPane(lineTable);
-        lineScroll.setPreferredSize(new Dimension(300, scrollH));
+        lineScroll.setPreferredSize(new Dimension(100, scrollH));
         lineScroll.setMaximumSize(new Dimension(Integer.MAX_VALUE, scrollH));
         lineScroll.setBorder(BorderFactory.createLineBorder(new Color(0xE2, 0xE5, 0xEA)));
         lineScroll.setAlignmentX(Component.LEFT_ALIGNMENT);
@@ -415,33 +425,114 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         totals.setOpaque(false);
         totals.setAlignmentX(Component.LEFT_ALIGNMENT);
         totals.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
-        totals.setBorder(new EmptyBorder(2, 0, 0, 0));
-        if (inv.discount() > 0) totals.add(detailRow("Discount", "Rs. " + String.format("%.2f", inv.discount())));
-        totals.add(detailRow("Total",   "Rs. " + String.format("%.2f", inv.total())));
-        totals.add(detailRow("Paid",    "Rs. " + String.format("%.2f", inv.paid())));
+        if (inv.discount() > 0) totals.add(detailRow("Discount", "Rs. " + String.format("%,.2f", inv.discount())));
+        totals.add(detailRow("Total", "Rs. " + String.format("%,.2f", inv.total())));
+        totals.add(detailRow("Paid",  "Rs. " + String.format("%,.2f", inv.paid())));
         body.add(totals);
+        body.add(Box.createVerticalStrut(12));
+
+        // Returns section placeholder — loaded async
+        JLabel returnsTitle = new JLabel("RETURNS");
+        returnsTitle.setFont(returnsTitle.getFont().deriveFont(Font.BOLD, 10f));
+        returnsTitle.setForeground(AMBER);
+        returnsTitle.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(returnsTitle);
+        body.add(Box.createVerticalStrut(4));
+
+        JLabel returnsPlaceholder = new JLabel("  Loading returns…");
+        returnsPlaceholder.setFont(returnsPlaceholder.getFont().deriveFont(11f));
+        returnsPlaceholder.setForeground(TEXT2);
+        returnsPlaceholder.setAlignmentX(Component.LEFT_ALIGNMENT);
+        body.add(returnsPlaceholder);
+
+        // Load returns async
+        new SwingWorker<List<ReturnDto>, Void>() {
+            @Override protected List<ReturnDto> doInBackground() {
+                return returnService.getReturnsForInvoice(inv.invoiceNo());
+            }
+            @Override protected void done() {
+                try {
+                    List<ReturnDto> rets = get();
+                    int idx = -1;
+                    for (int i = 0; i < body.getComponentCount(); i++) {
+                        if (body.getComponent(i) == returnsPlaceholder) { idx = i; break; }
+                    }
+                    if (idx >= 0) body.remove(idx);
+                    if (rets.isEmpty()) {
+                        JLabel none = new JLabel("  No returns for this invoice.");
+                        none.setFont(none.getFont().deriveFont(11f));
+                        none.setForeground(TEXT2);
+                        none.setAlignmentX(Component.LEFT_ALIGNMENT);
+                        body.add(none, idx >= 0 ? idx : body.getComponentCount());
+                    } else {
+                        SimpleDateFormat rsdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
+                        int insertAt = idx >= 0 ? idx : body.getComponentCount();
+                        for (ReturnDto r : rets) {
+                            body.add(buildReturnRow(r, rsdf), insertAt++);
+                        }
+                    }
+                    body.revalidate();
+                    body.repaint();
+                } catch (Exception ignored) {}
+            }
+        }.execute();
 
         JScrollPane bodyScroll = new JScrollPane(body);
         bodyScroll.setBorder(null);
         bodyScroll.setOpaque(false);
         bodyScroll.getViewport().setOpaque(false);
-        ((JPanel)c).add(bodyScroll, BorderLayout.CENTER);
+        panel.add(bodyScroll, BorderLayout.CENTER);
 
-        // ── Buttons ───────────────────────────────────────────────────────────
+        // Buttons
         JPanel btnRow = new JPanel(new GridLayout(1, 2, 6, 0));
         btnRow.setOpaque(false);
         JButton reprint = new JButton("Reprint");
         reprint.addActionListener(e -> JOptionPane.showMessageDialog(this,
                 "Print feature coming soon.", "Print", JOptionPane.INFORMATION_MESSAGE));
         JButton processReturn = new JButton("Return");
-        processReturn.addActionListener(e -> Home.navigate(Home.CARD_RETURNS));
+        processReturn.addActionListener(e -> Home.navigateToReturnWithInvoice(inv.invoiceNo()));
+        boolean canReturn = !"Full Return".equals(inv.stat()) && !"Void".equals(inv.stat());
+        processReturn.setEnabled(canReturn);
         btnRow.add(reprint);
         btnRow.add(processReturn);
-        ((JPanel)c).add(btnRow, BorderLayout.SOUTH);
+        panel.add(btnRow, BorderLayout.SOUTH);
 
-        detailPanel.add(c, BorderLayout.CENTER);
-        detailPanel.revalidate();
-        detailPanel.repaint();
+        rightCard.add(panel, BorderLayout.CENTER);
+        detailContent = panel;
+        rightCard.revalidate();
+        rightCard.repaint();
+    }
+
+    private JPanel buildReturnRow(ReturnDto r, SimpleDateFormat sdf) {
+        JPanel row = new JPanel(new GridLayout(1, 4, 6, 0));
+        row.setOpaque(true);
+        row.setBackground(AMBER_BG);
+        row.setBorder(BorderFactory.createCompoundBorder(
+                new MatteBorder(0, 3, 0, 0, AMBER),
+                new EmptyBorder(5, 6, 5, 4)));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        JLabel item = new JLabel("<html><b>" + r.itemName() + "</b></html>");
+        item.setFont(item.getFont().deriveFont(11f));
+
+        JLabel qty  = new JLabel("Qty: " + r.qty());
+        qty.setFont(qty.getFont().deriveFont(11f));
+        qty.setForeground(TEXT2);
+
+        JLabel reason = new JLabel(r.reason());
+        reason.setFont(reason.getFont().deriveFont(10f));
+        reason.setForeground(AMBER);
+
+        JLabel date = new JLabel(r.returnDate() != null ? sdf.format(r.returnDate()) : "—");
+        date.setFont(date.getFont().deriveFont(10f));
+        date.setForeground(TEXT2);
+
+        row.add(item);
+        row.add(qty);
+        row.add(reason);
+        row.add(date);
+        return row;
     }
 
     private JPanel detailRow(String label, String value) {

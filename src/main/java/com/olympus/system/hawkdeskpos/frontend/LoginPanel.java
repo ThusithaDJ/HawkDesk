@@ -208,6 +208,10 @@ public class LoginPanel extends JPanel {
             }
         };
         card.setOpaque(false);
+        // Fixed height — stretches full width, height locked at 64px
+        card.setPreferredSize(new Dimension(card.getPreferredSize().width, 64));
+        card.setMinimumSize(new Dimension(0, 64));
+        card.setMaximumSize(new Dimension(Short.MAX_VALUE, 64));
         card.setBackground(selected ? new Color(255,255,255,46) : new Color(255,255,255,20));
         card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
@@ -509,19 +513,39 @@ public class LoginPanel extends JPanel {
     }
 
     private static JPanel createLogoBox() {
-        JPanel p = new JPanel(new GridBagLayout()) {
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(new Color(255, 255, 255, 38));
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 9, 9);
-                g2.dispose();
+    // Load and scale the icon once, outside the anonymous class
+    Image logoImg = null;
+    try {
+        logoImg = new ImageIcon(
+            LoginPanel.class.getResource("/images/icons/hawkpos-icon.png")
+        ).getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH);
+    } catch (Exception ignored) {}
+
+    final Image img = logoImg;
+
+    JPanel p = new JPanel(new GridBagLayout()) {
+        @Override protected void paintComponent(Graphics g) {
+            super.paintComponent(g);                          // clear first
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // rounded background
+            g2.setColor(new Color(255, 255, 255, 38));
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 9, 9);
+
+            // centred image (6px padding on each side inside the 36×36 box)
+            if (img != null) {
+                int pad = 6;
+                g2.drawImage(img, pad, pad, getWidth() - pad * 2, getHeight() - pad * 2, this);
             }
-        };
-        p.setOpaque(false);
-        p.setPreferredSize(new Dimension(36, 36));
-        return p;
-    }
+
+            g2.dispose();
+        }
+    };
+    p.setOpaque(false);
+    p.setPreferredSize(new Dimension(36, 36));
+    return p;
+}
 
     private static String initials(String name) {
         if (name == null || name.isEmpty()) return "?";

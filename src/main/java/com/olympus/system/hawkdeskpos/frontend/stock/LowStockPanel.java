@@ -1,5 +1,6 @@
 package com.olympus.system.hawkdeskpos.frontend.stock;
 
+import com.olympus.system.hawkdeskpos.dto.ItemDto;
 import com.olympus.system.hawkdeskpos.dto.StockLevelDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
@@ -110,7 +111,24 @@ public class LowStockPanel extends JPanel implements com.olympus.system.hawkdesk
         goReceive.setForeground(Color.WHITE);
         goReceive.setOpaque(true);
         goReceive.setBorderPainted(false);
-        goReceive.addActionListener(e -> Home.navigate(Home.CARD_RECEIVE));
+        goReceive.addActionListener(e -> {
+            List<ItemDto> selected = new ArrayList<>();
+            for (int i = 0; i < checkBoxes.size(); i++) {
+                if (checkBoxes.get(i).isSelected() && i < items.size()) {
+                    StockLevelDto d = items.get(i);
+                    selected.add(new ItemDto(d.itemId(), d.itemName(), d.sku(),
+                            d.categoryName(), d.brandName(), "", d.stat(),
+                            d.totalQty(), d.minLevel(), d.maxLevel(),
+                            d.costPrice(), d.sellingPrice(), 0, ""));
+                }
+            }
+            if (selected.isEmpty()) {
+                JOptionPane.showMessageDialog(LowStockPanel.this,
+                        "Select at least one item first.", "No Selection", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            Home.navigateToReceiveStockWithItems(selected);
+        });
         actionRow.add(selectAll);
         actionRow.add(clearAll);
         actionRow.add(goReceive);

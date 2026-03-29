@@ -36,6 +36,7 @@
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Return"/>
         <!-- New entities -->
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.ItemVariant"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.ItemBatch"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Employee"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.UserPermissions"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.StockAdjustment"/>

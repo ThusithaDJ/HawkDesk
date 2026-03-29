@@ -84,8 +84,11 @@ public class EditItemPanel extends JPanel {
         header.add(titleRow, BorderLayout.WEST);
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_STOCK));
+        JButton revertBtn = new JButton("↺ Revert");
+        revertBtn.addActionListener(e -> { if (currentItemId > 0) loadItem(currentItemId); });
         JPanel hBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         hBtns.setOpaque(false);
+        hBtns.add(revertBtn);
         hBtns.add(back);
         header.add(hBtns, BorderLayout.EAST);
         root.add(header, BorderLayout.NORTH);

@@ -34,6 +34,10 @@ public class SettingsPanel extends JPanel {
     private JCheckBox taxInclusiveCheck;
     private JTextField taxRateField, invoicePrefixField;
 
+    // Returns fields
+    private JCheckBox enableReturnsCheck;
+    private JSpinner  returnPeriodSpinner;
+
     // Stock fields
     private JTextField defaultMinLevelField;
 
@@ -165,10 +169,12 @@ public class SettingsPanel extends JPanel {
         p.add(c);
         p.add(Box.createVerticalStrut(12));
         p.add(saveRow(() -> {
-            settings.set("shopName",    shopNameField.getText().trim());
-            settings.set("shopAddress", shopAddressField.getText().trim());
-            settings.set("shopPhone",   shopPhoneField.getText().trim());
-            settings.set("currency",    currencyField.getText().trim());
+            String name = shopNameField.getText().trim();
+            settings.set("ShopName",    name);
+            settings.set("ShopAddress", shopAddressField.getText().trim());
+            settings.set("ShopPhone",   shopPhoneField.getText().trim());
+            settings.set("Currency",    currencyField.getText().trim());
+            Home.refreshNavBarShopName(name);
             showSavedMsg();
         }));
         return p;
@@ -179,6 +185,7 @@ public class SettingsPanel extends JPanel {
         p.setOpaque(false);
         p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
 
+        // ── Sales & Billing card ──────────────────────────────────────────────
         CardPanel c = sectionCard("SALES & BILLING");
         JPanel grid = new JPanel(new GridLayout(2, 2, 10, 10));
         grid.setOpaque(false);
@@ -188,16 +195,39 @@ public class SettingsPanel extends JPanel {
         taxInclusiveCheck = new JCheckBox("Tax Inclusive Pricing", "true".equals(settings.get("taxInclusive", "false")));
 
         grid.add(labeled("Default Tax Rate (%)", taxRateField));
-        grid.add(labeled("Invoice Prefix",      invoicePrefixField));
-        grid.add(labeled("", taxInclusiveCheck));
+        grid.add(labeled("Invoice Prefix",       invoicePrefixField));
+        grid.add(labeled("",                     taxInclusiveCheck));
 
         ((JPanel)c).add(grid, BorderLayout.CENTER);
         p.add(c);
         p.add(Box.createVerticalStrut(12));
+
+        // ── Returns card ──────────────────────────────────────────────────────
+        CardPanel rc = sectionCard("RETURNS");
+        JPanel rgrid = new JPanel(new GridLayout(1, 3, 10, 0));
+        rgrid.setOpaque(false);
+
+        enableReturnsCheck = new JCheckBox("Enable Returns", settings.returnsEnabled());
+        enableReturnsCheck.setFont(enableReturnsCheck.getFont().deriveFont(13f));
+
+        returnPeriodSpinner = new JSpinner(new SpinnerNumberModel(
+                settings.returnPeriodDays(), 1, 365, 1));
+        returnPeriodSpinner.setPreferredSize(new Dimension(80, 28));
+
+        rgrid.add(labeled("", enableReturnsCheck));
+        rgrid.add(labeled("Return Period (days)", returnPeriodSpinner));
+        rgrid.add(new JPanel()); // spacer
+
+        ((JPanel)rc).add(rgrid, BorderLayout.CENTER);
+        p.add(rc);
+        p.add(Box.createVerticalStrut(12));
+
         p.add(saveRow(() -> {
-            settings.set("taxRate",       taxRateField.getText().trim());
-            settings.set("invoicePrefix", invoicePrefixField.getText().trim());
-            settings.set("taxInclusive",  String.valueOf(taxInclusiveCheck.isSelected()));
+            settings.set("taxRate",          taxRateField.getText().trim());
+            settings.set("invoicePrefix",    invoicePrefixField.getText().trim());
+            settings.set("taxInclusive",     String.valueOf(taxInclusiveCheck.isSelected()));
+            settings.set("ReturnsEnabled",   String.valueOf(enableReturnsCheck.isSelected()));
+            settings.set("ReturnPeriodDays", String.valueOf(returnPeriodSpinner.getValue()));
             showSavedMsg();
         }));
         return p;
@@ -267,7 +297,7 @@ public class SettingsPanel extends JPanel {
         p.add(c);
         p.add(Box.createVerticalStrut(12));
         p.add(saveRow(() -> {
-            settings.set("fontSizePx", String.valueOf(selectedFontSize));
+            settings.set("UIFontSize", String.valueOf(selectedFontSize));
             showSavedMsg();
         }));
         return p;

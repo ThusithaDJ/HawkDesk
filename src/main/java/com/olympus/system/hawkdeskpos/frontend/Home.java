@@ -1,6 +1,7 @@
 package com.olympus.system.hawkdeskpos.frontend;
 
 import com.olympus.system.hawkdeskpos.db.util.Controller;
+import com.olympus.system.hawkdeskpos.dto.ItemDto;
 import com.olympus.system.hawkdeskpos.frontend.admin.*;
 import com.olympus.system.hawkdeskpos.frontend.components.NavBar;
 import com.olympus.system.hawkdeskpos.frontend.components.Refreshable;
@@ -9,6 +10,9 @@ import com.olympus.system.hawkdeskpos.frontend.reports.ReportsPanel;
 import com.olympus.system.hawkdeskpos.frontend.sale.*;
 import com.olympus.system.hawkdeskpos.frontend.stock.*;
 import com.olympus.system.hawkdeskpos.service.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import com.olympus.system.hawkdeskpos.session.SessionContext;
 import org.hibernate.SessionFactory;
 
@@ -42,7 +46,8 @@ public class Home extends JFrame {
     public static final String CARD_USERS     = "USER_MGMT";
     public static final String CARD_SETTINGS  = "SETTINGS";
     public static final String CARD_BACKUP    = "BACKUP";
-    public static final String CARD_GRN_HIST  = "GRN_HISTORY";
+    public static final String CARD_GRN_HIST    = "GRN_HISTORY";
+    public static final String CARD_RETURNS_LIST = "ALL_RETURNS";
 
     // ── Backward-compat shims (referenced by old compiled classes) ────────────
     /** @deprecated No longer used; kept for compile compatibility only. */
@@ -78,6 +83,12 @@ public class Home extends JFrame {
     private final BackupService   backupService;
     private final SettingsService settingsService;
 
+    private final ScheduledExecutorService expiryTimer = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "batch-expiry-checker");
+        t.setDaemon(true);
+        return t;
+    });
+
     private NavBar navBar;
 
     public Home() {
@@ -96,6 +107,11 @@ public class Home extends JFrame {
         settingsService = new SettingsService(sf);
         backupService   = new BackupService(sf, settingsService);
 
+        // Run expiry check immediately, then every 6 hours
+        expiryTimer.scheduleAtFixedRate(
+                () -> stockService.getBatchService().markExpiredBatches(),
+                0, 6, TimeUnit.HOURS);
+
         setUndecorated(true);
         setExtendedState(JFrame.MAXIMIZED_BOTH);
         setMinimumSize(new Dimension(1024, 768));
@@ -108,6 +124,11 @@ public class Home extends JFrame {
 
         registerCards();
         cardLayout.show(cardHost, CARD_LOGIN);
+        
+        ImageIcon icon = new ImageIcon(
+                getClass().getResource("/images/icons/hawkpos-icon.png")
+        );
+        setIconImage(icon.getImage());
     }
 
     private void registerCards() {
@@ -119,9 +140,10 @@ public class Home extends JFrame {
         cardHost.add(new EditItemPanel(itemService, categoryService), CARD_EDIT_ITEM);
         cardHost.add(new ReceiveStockPanel(itemService, stockService, settingsService), CARD_RECEIVE);
         cardHost.add(new LowStockPanel(itemService, reportService), CARD_LOW_STOCK);
-        cardHost.add(new SalesHistoryPanel(saleService), CARD_HIST);
-        cardHost.add(new FindInvoicePanel(saleService), CARD_FIND_INV);
-        cardHost.add(new GoodsReturnPanel(saleService, returnService), CARD_RETURNS);
+        cardHost.add(new SalesHistoryPanel(saleService, returnService), CARD_HIST);
+        cardHost.add(new FindInvoicePanel(saleService, returnService), CARD_FIND_INV);
+        cardHost.add(new GoodsReturnPanel(saleService, returnService, settingsService), CARD_RETURNS);
+        cardHost.add(new ReturnsPanel(returnService), CARD_RETURNS_LIST);
         cardHost.add(new StockAdjustmentPanel(itemService, stockService), CARD_ADJUST);
         cardHost.add(new ReportsPanel(reportService, settingsService), CARD_REPORTS);
         cardHost.add(new ManageCategoriesPanel(categoryService), CARD_CATS);
@@ -179,6 +201,43 @@ public class Home extends JFrame {
             if (c instanceof EditItemPanel eip) { eip.loadItem(itemId); break; }
         }
         navigate(CARD_EDIT_ITEM);
+    }
+
+    public static void navigateToNewSaleWithItem(ItemDto item) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof NewSalePanel nsp) { nsp.addItemDirectly(item); break; }
+        }
+        navigate(CARD_SALE);
+    }
+
+    public static void navigateToReceiveStockWithItem(ItemDto item) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof ReceiveStockPanel rsp) { rsp.preload(item); break; }
+        }
+        navigate(CARD_RECEIVE);
+    }
+
+    public static void navigateToReceiveStockWithItems(java.util.List<ItemDto> items) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof ReceiveStockPanel rsp) { rsp.preloadMultiple(items); break; }
+        }
+        navigate(CARD_RECEIVE);
+    }
+
+    public static void refreshNavBarShopName(String shopName) {
+        if (instance == null || instance.navBar == null) return;
+        instance.navBar.updateShopName(shopName);
+    }
+
+    public static void navigateToReturnWithInvoice(String invoiceNo) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof GoodsReturnPanel grp) { grp.loadInvoice(invoiceNo); break; }
+        }
+        navigate(CARD_RETURNS);
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────

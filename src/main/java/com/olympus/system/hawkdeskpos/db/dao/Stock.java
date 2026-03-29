@@ -33,6 +33,10 @@ public class Stock implements Serializable {
     @JoinColumn(name = "variant_id")
     private ItemVariant variant;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batch_id")
+    private ItemBatch batchObj;
+
     @Temporal(TemporalType.DATE)
     @Column(name = "expire_date")
     private Date expireDate;
@@ -70,6 +74,8 @@ public class Stock implements Serializable {
     public void setSku(String sku) { this.sku = sku; }
     public ItemVariant getVariant() { return variant; }
     public void setVariant(ItemVariant variant) { this.variant = variant; }
+    public ItemBatch getBatchObj() { return batchObj; }
+    public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public Date getExpireDate() { return expireDate; }
     public void setExpireDate(Date expireDate) { this.expireDate = expireDate; }
     public Integer getQty() { return qty; }

@@ -41,7 +41,8 @@ public class UserManagementPanel extends JPanel {
             "View Stock", "Add Item", "Edit Item", "Receive Stock",
             "Adjust Stock", "Manage Categories", "Delete Categories",
             "View Reports", "Export Reports", "View GRN",
-            "Access Settings", "Manage Users", "Access Backup"
+            "Access Settings", "Manage Users", "Access Backup",
+            "View Batch Cost", "Override FIFO"
     };
     private JToggleButton[] permToggles;
 
@@ -280,7 +281,7 @@ public class UserManagementPanel extends JPanel {
         CardPanel permsCard = new CardPanel(new BorderLayout(0, 10));
         ((JPanel)permsCard).setBorder(new EmptyBorder(12, 12, 12, 12));
         ((JPanel)permsCard).setAlignmentX(Component.LEFT_ALIGNMENT);
-        ((JPanel)permsCard).setMaximumSize(new Dimension(Integer.MAX_VALUE, 400));
+        ((JPanel)permsCard).setMaximumSize(new Dimension(Integer.MAX_VALUE, 500));
 
         JLabel permTitle = new JLabel("PERMISSIONS");
         permTitle.setFont(permTitle.getFont().deriveFont(Font.BOLD, 11f));

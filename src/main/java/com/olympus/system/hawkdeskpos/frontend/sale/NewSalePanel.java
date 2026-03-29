@@ -17,7 +17,10 @@ import javax.swing.table.TableCellRenderer;
 import java.awt.*;
 import java.awt.event.*;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * New Sale screen with tab-based hold support.
@@ -35,6 +38,12 @@ public class NewSalePanel extends JPanel {
 
     private final ItemService itemService;
     private final SaleService saleService;
+
+    private JButton chargeBtn;
+    private JPanel  stockWarnPanel;
+    private JLabel  stockWarnLbl;
+    private JButton switchBatchBtn;
+    private final Set<Integer> blockedRows = new HashSet<>();
 
     // ── Per-session state ─────────────────────────────────────────────────────
 
@@ -107,7 +116,10 @@ public class NewSalePanel extends JPanel {
             ItemDto item = s.cartItems.get(i);
             int     qty  = s.cartQtys.get(i);
             cartModel.addRow(new Object[]{
-                    item.itemName(), item.sku(), qty,
+                    item.itemName(), item.sku(),
+                    item.unit() != null ? item.unit() : "",
+                    (item.batchLabel() != null && !item.batchLabel().isBlank()) ? item.batchLabel() : "—",
+                    qty,
                     String.format("%.2f", item.sellingPrice()),
                     String.format("%.2f", item.sellingPrice() * qty), "✕"
             });
@@ -120,6 +132,10 @@ public class NewSalePanel extends JPanel {
             case "CARD"   -> { if (btnCard   != null) btnCard.setSelected(true); }
             case "CREDIT" -> { if (btnCredit != null) btnCredit.setSelected(true); }
         }
+        blockedRows.clear();
+        if (stockWarnPanel != null) hideStockWarning();
+        if (chargeBtn != null) updateChargeState();
+        for (int i = 0; i < s.cartItems.size(); i++) checkStockForRow(i);
         updateTotals();
     }
 
@@ -239,6 +255,11 @@ public class NewSalePanel extends JPanel {
         sessionStrip.repaint();
     }
 
+    /** Called by Home.navigateToNewSaleWithItem to pre-load an item into the active cart. */
+    public void addItemDirectly(ItemDto item) {
+        addToCart(item);
+    }
+
     public void resetCart() {
         cartItems.clear();
         cartQtys.clear();
@@ -249,6 +270,9 @@ public class NewSalePanel extends JPanel {
         changeLabel.setForeground(GREEN);
         paymentMethod = "CASH";
         if (btnCash != null) btnCash.setSelected(true);
+        blockedRows.clear();
+        if (stockWarnPanel != null) hideStockWarning();
+        if (chargeBtn != null) updateChargeState();
         updateTotals();
     }
 
@@ -293,6 +317,8 @@ public class NewSalePanel extends JPanel {
         left.setOpaque(false);
         left.add(buildSearchSection(), BorderLayout.NORTH);
         left.add(buildCartSection(),   BorderLayout.CENTER);
+        stockWarnPanel = buildStockWarnPanel();
+        left.add(stockWarnPanel,       BorderLayout.SOUTH);
 
         content.add(left,                BorderLayout.CENTER);
         content.add(buildPaymentPanel(), BorderLayout.EAST);
@@ -401,7 +427,10 @@ public class NewSalePanel extends JPanel {
         left.setOpaque(false);
         JLabel nameLbl = new JLabel(item.itemName());
         nameLbl.setFont(nameLbl.getFont().deriveFont(Font.BOLD, 13f));
-        JLabel subLbl = new JLabel(item.sku() + "  ·  " + item.categoryName());
+        String batchInfo = (item.batchLabel() != null && !item.batchLabel().isBlank())
+                ? "  ·  Batch: " + item.batchLabel() + "  ·  Qty: " + item.currentQty()
+                : "  ·  Qty: " + item.currentQty();
+        JLabel subLbl = new JLabel(item.sku() + "  ·  " + item.categoryName() + batchInfo);
         subLbl.setFont(subLbl.getFont().deriveFont(11f));
         subLbl.setForeground(TEXT2);
         left.add(nameLbl);
@@ -459,10 +488,10 @@ public class NewSalePanel extends JPanel {
     // ── Cart section ──────────────────────────────────────────────────────────
 
     private JPanel buildCartSection() {
-        String[] cols = {"Item Name", "SKU", "Qty", "Unit Price (Rs.)", "Total (Rs.)", ""};
+        String[] cols = {"Item Name", "SKU", "Unit", "Batch", "Qty", "Unit Price (Rs.)", "Total (Rs.)", ""};
         cartModel = new DefaultTableModel(cols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
-            @Override public Class<?> getColumnClass(int c) { return c == 2 ? Integer.class : String.class; }
+            @Override public Class<?> getColumnClass(int c) { return c == 4 ? Integer.class : String.class; }
         };
 
         cartTable = new JTable(cartModel);
@@ -472,13 +501,16 @@ public class NewSalePanel extends JPanel {
         cartTable.getTableHeader().setFont(cartTable.getFont().deriveFont(Font.BOLD, 12f));
         cartTable.getTableHeader().setBackground(new Color(0xF7, 0xF8, 0xFA));
         cartTable.getTableHeader().setForeground(TEXT2);
-        cartTable.getColumnModel().getColumn(5).setMaxWidth(48);
-        cartTable.getColumnModel().getColumn(5).setMinWidth(48);
-        cartTable.getColumnModel().getColumn(2).setPreferredWidth(100);
-        cartTable.getColumnModel().getColumn(2).setMinWidth(90);
+        cartTable.getColumnModel().getColumn(7).setMaxWidth(48);
+        cartTable.getColumnModel().getColumn(7).setMinWidth(48);
+        cartTable.getColumnModel().getColumn(2).setMaxWidth(70);
+        cartTable.getColumnModel().getColumn(2).setPreferredWidth(60);
+        cartTable.getColumnModel().getColumn(3).setPreferredWidth(110);
+        cartTable.getColumnModel().getColumn(4).setPreferredWidth(100);
+        cartTable.getColumnModel().getColumn(4).setMinWidth(90);
 
         // Qty column: custom [-] qty [+] renderer
-        cartTable.getColumnModel().getColumn(2).setCellRenderer(new QtyButtonRenderer());
+        cartTable.getColumnModel().getColumn(4).setCellRenderer(new QtyButtonRenderer());
 
         // Remove (✕) column renderer
         cartTable.getColumn("").setCellRenderer((table, value, isSel, hasFocus, row, col) -> {
@@ -497,7 +529,7 @@ public class NewSalePanel extends JPanel {
                 int row = cartTable.rowAtPoint(e.getPoint());
                 if (row < 0) return;
 
-                if (col == 2) {  // qty column
+                if (col == 4) {  // qty column
                     Rectangle cell = cartTable.getCellRect(row, col, false);
                     int relX = e.getX() - cell.x;
                     if (relX <= 30) {
@@ -549,10 +581,11 @@ public class NewSalePanel extends JPanel {
         if (row < 0 || row >= cartQtys.size()) return;
         int newQty = Math.max(1, cartQtys.get(row) + delta);
         cartQtys.set(row, newQty);
-        cartModel.setValueAt(newQty, row, 2);
+        cartModel.setValueAt(newQty, row, 4);
         double price = cartItems.get(row).sellingPrice();
-        cartModel.setValueAt(String.format("%.2f", price * newQty), row, 4);
+        cartModel.setValueAt(String.format("%.2f", price * newQty), row, 6);
         updateTotals();
+        checkStockForRow(row);
     }
 
     // ── Payment panel ─────────────────────────────────────────────────────────
@@ -627,7 +660,7 @@ public class NewSalePanel extends JPanel {
         ((JPanel) c).add(rcvRow);
         ((JPanel) c).add(Box.createVerticalStrut(16));
 
-        JButton chargeBtn = new JButton("CHARGE");
+        chargeBtn = new JButton("CHARGE");
         chargeBtn.setBackground(GREEN);
         chargeBtn.setForeground(Color.WHITE);
         chargeBtn.setOpaque(true);
@@ -713,11 +746,15 @@ public class NewSalePanel extends JPanel {
         cartItems.add(item);
         cartQtys.add(1);
         cartModel.addRow(new Object[]{
-                item.itemName(), item.sku(), 1,
+                item.itemName(), item.sku(),
+                item.unit() != null ? item.unit() : "",
+                (item.batchLabel() != null && !item.batchLabel().isBlank()) ? item.batchLabel() : "—",
+                1,
                 String.format("%.2f", item.sellingPrice()),
                 String.format("%.2f", item.sellingPrice()), "✕"
         });
         updateTotals();
+        checkStockForRow(cartItems.size() - 1);
     }
 
     private void removeFromCart(int row) {
@@ -725,6 +762,15 @@ public class NewSalePanel extends JPanel {
         cartItems.remove(row);
         cartQtys.remove(row);
         cartModel.removeRow(row);
+        Set<Integer> shifted = new HashSet<>();
+        for (int r : blockedRows) {
+            if (r < row) shifted.add(r);
+            else if (r > row) shifted.add(r - 1);
+        }
+        blockedRows.clear();
+        blockedRows.addAll(shifted);
+        if (blockedRows.isEmpty()) hideStockWarning();
+        updateChargeState();
         updateTotals();
     }
 
@@ -782,7 +828,7 @@ public class NewSalePanel extends JPanel {
             ItemDto item = cartItems.get(i);
             int     qty  = cartQtys.get(i);
             lines.add(new SaleLineDto(item.itemId(), item.stockId(), item.itemName(), item.sku(), qty,
-                    item.sellingPrice(), qty * item.sellingPrice(), ""));
+                    item.sellingPrice(), qty * item.sellingPrice(), "", item.unit()));
         }
 
         final double fd = discount, fp = amountPaid;
@@ -864,6 +910,167 @@ public class NewSalePanel extends JPanel {
 
         overlay.add(panel);
         overlay.setVisible(true);
+    }
+
+    // ── Stock availability ────────────────────────────────────────────────────
+
+    private JPanel buildStockWarnPanel() {
+        JPanel p = new JPanel(new BorderLayout(8, 0));
+        p.setBackground(new Color(0xFF, 0xF3, 0xE0));
+        p.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xFF, 0xA0, 0x00)),
+                new EmptyBorder(8, 12, 8, 12)));
+        stockWarnLbl = new JLabel();
+        stockWarnLbl.setForeground(new Color(0xE6, 0x51, 0x00));
+        stockWarnLbl.setFont(stockWarnLbl.getFont().deriveFont(12f));
+        switchBatchBtn = new JButton("View Batches");
+        switchBatchBtn.addActionListener(e -> {
+            Integer r    = (Integer) switchBatchBtn.getClientProperty("row");
+            ItemDto item = (ItemDto) switchBatchBtn.getClientProperty("item");
+            if (r != null && item != null) showBatchPicker(r, item);
+        });
+        p.add(stockWarnLbl,   BorderLayout.CENTER);
+        p.add(switchBatchBtn, BorderLayout.EAST);
+        p.setVisible(false);
+        return p;
+    }
+
+    private void checkStockForRow(int row) {
+        if (row < 0 || row >= cartItems.size()) return;
+        ItemDto item    = cartItems.get(row);
+        int requested   = cartQtys.get(row);
+        int stockId     = item.stockId();
+        if (stockId <= 0) return; // aggregated row — skip
+        new SwingWorker<Integer, Void>() {
+            @Override protected Integer doInBackground() {
+                return itemService.getAvailableQtyForStock(stockId);
+            }
+            @Override protected void done() {
+                try {
+                    int available = get();
+                    if (requested > available) {
+                        blockedRows.add(row);
+                        showStockWarning(row, item, available);
+                    } else {
+                        blockedRows.remove(row);
+                        if (blockedRows.isEmpty()) hideStockWarning();
+                    }
+                    updateChargeState();
+                } catch (Exception ignored) {}
+            }
+        }.execute();
+    }
+
+    private void showStockWarning(int row, ItemDto item, int available) {
+        if (available <= 0) {
+            stockWarnLbl.setText("⚠  \"" + item.itemName() + "\" is out of stock. Reduce qty or remove item.");
+            switchBatchBtn.setVisible(false);
+        } else {
+            stockWarnLbl.setText("⚠  Only " + available + " unit(s) of \"" + item.itemName() + "\" in this batch.");
+            switchBatchBtn.setVisible(true);
+            switchBatchBtn.putClientProperty("row",  row);
+            switchBatchBtn.putClientProperty("item", item);
+        }
+        stockWarnPanel.setVisible(true);
+        triggerLayout();
+    }
+
+    private void hideStockWarning() {
+        stockWarnPanel.setVisible(false);
+        triggerLayout();
+    }
+
+    private void updateChargeState() {
+        if (chargeBtn == null) return;
+        boolean ok = blockedRows.isEmpty();
+        chargeBtn.setEnabled(ok);
+        chargeBtn.setBackground(ok ? GREEN : new Color(0x9E, 0x9E, 0x9E));
+    }
+
+    private void showBatchPicker(int row, ItemDto item) {
+        new SwingWorker<List<ItemDto>, Void>() {
+            @Override protected List<ItemDto> doInBackground() {
+                return itemService.listBatchesForSale(item.itemId());
+            }
+            @Override protected void done() {
+                try {
+                    List<ItemDto> batches = get();
+                    if (batches.isEmpty()) {
+                        JOptionPane.showMessageDialog(NewSalePanel.this,
+                                "No stock available for \"" + item.itemName() + "\".",
+                                "Out of Stock", JOptionPane.WARNING_MESSAGE);
+                        return;
+                    }
+                    showBatchPickerDialog(row, batches);
+                } catch (Exception ignored) {}
+            }
+        }.execute();
+    }
+
+    private void swapCartBatch(int row, ItemDto chosen, int qty) {
+        cartItems.set(row, chosen);
+        cartQtys.set(row, qty);
+        cartModel.setValueAt(chosen.sku(), row, 1);
+        cartModel.setValueAt(chosen.unit() != null ? chosen.unit() : "", row, 2);
+        cartModel.setValueAt((chosen.batchLabel() != null && !chosen.batchLabel().isBlank()) ? chosen.batchLabel() : "—", row, 3);
+        cartModel.setValueAt(qty, row, 4);
+        cartModel.setValueAt(String.format("%.2f", chosen.sellingPrice()), row, 5);
+        cartModel.setValueAt(String.format("%.2f", chosen.sellingPrice() * qty), row, 6);
+        updateTotals();
+        blockedRows.remove(row);
+        if (blockedRows.isEmpty()) hideStockWarning();
+        updateChargeState();
+    }
+
+    private void showBatchPickerDialog(int row, List<ItemDto> batches) {
+        JDialog dlg = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Choose Batch", true);
+        dlg.setSize(480, 300);
+        dlg.setLocationRelativeTo(this);
+        dlg.setLayout(new BorderLayout());
+
+        String[] cols = {"Batch / Label", "Available Qty", "Price (Rs.)"};
+        DefaultTableModel m = new DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        for (ItemDto b : batches) {
+            String label = (b.batchLabel() != null && !b.batchLabel().isBlank()) ? b.batchLabel() : "(no batch)";
+            m.addRow(new Object[]{label, b.currentQty(), String.format("%.2f", b.sellingPrice())});
+        }
+        JTable tbl = new JTable(m);
+        tbl.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        tbl.setRowHeight(32);
+        if (tbl.getRowCount() > 0) tbl.setRowSelectionInterval(0, 0);
+
+        JButton select = new JButton("Select");
+        select.addActionListener(e -> {
+            int sel = tbl.getSelectedRow();
+            if (sel < 0) return;
+            ItemDto chosen  = batches.get(sel);
+            int requested   = cartQtys.get(row);
+            int available   = chosen.currentQty();
+            if (available >= requested) {
+                swapCartBatch(row, chosen, requested);
+                dlg.dispose();
+            } else {
+                int res = JOptionPane.showConfirmDialog(dlg,
+                        "Only " + available + " unit(s) available in this batch.\n" +
+                        "Reduce the quantity from " + requested + " to " + available + "?",
+                        "Insufficient Stock", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                if (res == JOptionPane.YES_OPTION) {
+                    swapCartBatch(row, chosen, available);
+                    dlg.dispose();
+                }
+                // NO: keep dialog open so the user can choose a different batch
+            }
+        });
+        JButton cancel = new JButton("Cancel");
+        cancel.addActionListener(e -> dlg.dispose());
+
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        btns.add(cancel); btns.add(select);
+        dlg.add(new JScrollPane(tbl), BorderLayout.CENTER);
+        dlg.add(btns, BorderLayout.SOUTH);
+        dlg.setVisible(true);
     }
 
     // ── Qty button renderer ───────────────────────────────────────────────────

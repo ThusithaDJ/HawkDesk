@@ -21,5 +21,7 @@ public enum Permission {
     VIEW_GRN,
     ACCESS_SETTINGS,
     MANAGE_USERS,
-    ACCESS_BACKUP
+    ACCESS_BACKUP,
+    VIEW_BATCH_COST,
+    OVERRIDE_FIFO
 }

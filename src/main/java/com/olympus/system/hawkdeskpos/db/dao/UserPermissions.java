@@ -31,6 +31,8 @@ public class UserPermissions {
     @Column(name = "can_access_settings")   private boolean canAccessSettings   = false;
     @Column(name = "can_manage_users")      private boolean canManageUsers      = false;
     @Column(name = "can_access_backup")     private boolean canAccessBackup     = false;
+    @Column(name = "can_view_batch_cost")   private boolean canViewBatchCost    = false;
+    @Column(name = "can_override_fifo")     private boolean canOverrideFifo     = false;
 
     public UserPermissions() {}
 
@@ -55,6 +57,8 @@ public class UserPermissions {
     public boolean isCanAccessSettings()   { return canAccessSettings; }
     public boolean isCanManageUsers()      { return canManageUsers; }
     public boolean isCanAccessBackup()     { return canAccessBackup; }
+    public boolean isCanViewBatchCost()    { return canViewBatchCost; }
+    public boolean isCanOverrideFifo()     { return canOverrideFifo; }
 
     public void setCanMakeSale(boolean v)         { this.canMakeSale = v; }
     public void setCanViewSales(boolean v)        { this.canViewSales = v; }
@@ -73,4 +77,6 @@ public class UserPermissions {
     public void setCanAccessSettings(boolean v)   { this.canAccessSettings = v; }
     public void setCanManageUsers(boolean v)      { this.canManageUsers = v; }
     public void setCanAccessBackup(boolean v)     { this.canAccessBackup = v; }
+    public void setCanViewBatchCost(boolean v)    { this.canViewBatchCost = v; }
+    public void setCanOverrideFifo(boolean v)     { this.canOverrideFifo = v; }
 }

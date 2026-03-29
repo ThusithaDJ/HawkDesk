@@ -42,4 +42,6 @@ public class SettingsService {
     public int    fontSizePx()  { return getInt("UIFontSize", 14); }
     public boolean allowNegativeStock() { return getBool("AllowNegativeStock", false); }
     public boolean autoPrintReceipt()   { return getBool("AutoPrintReceipt", false); }
+    public boolean returnsEnabled()     { return getBool("ReturnsEnabled",   true);  }
+    public int     returnPeriodDays()   { return getInt("ReturnPeriodDays",  30);    }
 }

@@ -18,10 +18,12 @@ public class StockService {
 
     private final SessionFactory sf;
     private final AuditService   audit;
+    private final BatchService   batchService;
 
     public StockService(SessionFactory sf, AuditService audit) {
-        this.sf    = sf;
-        this.audit = audit;
+        this.sf           = sf;
+        this.audit        = audit;
+        this.batchService = new BatchService(sf);
     }
 
     /** Current total quantity across all active stock records for an item. */
@@ -53,6 +55,16 @@ public class StockService {
                 Item item = session.get(Item.class, line.itemId());
                 if (item == null) continue;
 
+                // Resolve batch number: use provided value or auto-generate
+                String batchNumber = (line.batchName() != null && !line.batchName().isBlank())
+                        ? line.batchName() : batchService.generateBatchNumber();
+
+                // Create formal ItemBatch record
+                ItemBatch itemBatch = batchService.createBatch(session, item, info,
+                        batchNumber, null,
+                        line.qtyReceived(), line.costPrice(),
+                        line.expiryDate(), emp);
+
                 // Create new stock record for this GRN
                 Stock stock = new Stock();
                 stock.setItem(item);
@@ -60,11 +72,11 @@ public class StockService {
                 stock.setQty(line.qtyReceived());
                 stock.setCost(line.costPrice());
                 stock.setPrice(line.sellingPrice());
-                // Use custom batch name if provided, else fall back to GRN number
-                String batchLabel = (line.batchName() != null && !line.batchName().isBlank())
-                        ? line.batchName() : grnNumber;
-                stock.setBatch(batchLabel);
+                stock.setBatch(batchNumber); // keep string label for display convenience
+                stock.setBatchObj(itemBatch);
                 stock.setEmployee(emp);
+                if (line.expiryDate() != null) stock.setExpireDate(line.expiryDate());
+
                 // If a variant SKU is provided, find or create the item_variant record
                 if (line.variantSku() != null && !line.variantSku().isBlank()) {
                     ItemVariant variant = session.createQuery(
@@ -85,6 +97,7 @@ public class StockService {
                 grn.setItemQty(line.qtyReceived());
                 grn.setItemCost(line.costPrice());
                 grn.setItemPrice(line.sellingPrice());
+                grn.setBatchObj(itemBatch);
                 session.persist(grn);
             }
             tx.commit();
@@ -132,6 +145,12 @@ public class StockService {
     /** Public alias for UI use. */
     public String generateGrnNo() { return generateGrnNumber(); }
 
+    /** Generates the next batch number (B{YYYY}-NNN) via BatchService. */
+    public String generateBatchNo() { return batchService.generateBatchNumber(); }
+
+    /** Exposes BatchService for Home's expiry timer. */
+    public BatchService getBatchService() { return batchService; }
+
     private String generateGrnNumber() {
         String prefix = "GRN-" + LocalDate.now().format(DateTimeFormatter.ofPattern("yyMMdd")) + "-";
         try (var session = sf.openSession()) {
@@ -147,11 +166,15 @@ public class StockService {
                     "SELECT s FROM Stock s " +
                     "JOIN FETCH s.item i " +
                     "LEFT JOIN FETCH i.category LEFT JOIN FETCH i.brands " +
+                    "LEFT JOIN FETCH s.batchObj " +
                     "WHERE s.stat = 'Active' ORDER BY i.itemName, s.stockId",
                     Stock.class).list().stream().map(s -> {
                         Item item = s.getItem();
                         String displaySku = (s.getSku() != null && !s.getSku().isEmpty())
                                 ? s.getSku() : (item.getSku() != null ? item.getSku() : "");
+                        // Prefer expiry from the linked ItemBatch, fall back to stock.expireDate
+                        java.util.Date expiry = (s.getBatchObj() != null && s.getBatchObj().getExpiryDate() != null)
+                                ? s.getBatchObj().getExpiryDate() : s.getExpireDate();
                         return new StockBatchDto(
                                 s.getStockId(), item.getItemId(), item.getItemName(),
                                 item.getSku() != null ? item.getSku() : "",
@@ -161,7 +184,8 @@ public class StockService {
                                 item.getMinLevel() != null ? item.getMinLevel() : 5,
                                 s.getCost() != null ? s.getCost() : 0,
                                 s.getPrice() != null ? s.getPrice() : 0,
-                                s.getStat() != null ? s.getStat() : "Active");
+                                s.getStat() != null ? s.getStat() : "Active",
+                                expiry);
                     }).collect(Collectors.toList());
         } catch (Exception e) {
             System.err.println("StockService.listAllStockBatches: " + e.getMessage());
@@ -183,7 +207,7 @@ public class StockService {
                                         ln.getItem() != null ? ln.getItem().getItemName() : "",
                                         ln.getItemQty() != null ? ln.getItemQty() : 0,
                                         ln.getItemCost() != null ? ln.getItemCost() : 0,
-                                        ln.getItemPrice() != null ? ln.getItemPrice() : 0, 0, null, null))
+                                        ln.getItemPrice() != null ? ln.getItemPrice() : 0, 0, null, null, null))
                                 .toList();
                         return new GrnDto(
                                 g.getSupplier() != null ? g.getSupplier() : ("GRN-" + g.getGrnNo()),

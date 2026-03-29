@@ -18,6 +18,10 @@ public class StockAdjustment {
     @JoinColumn(name = "item_id", nullable = false)
     private Item item;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batch_id")
+    private ItemBatch batchObj;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "adjustment_type", nullable = false)
     private AdjustmentType adjustmentType;
@@ -52,6 +56,8 @@ public class StockAdjustment {
     public Long getId() { return id; }
     public Item getItem() { return item; }
     public void setItem(Item item) { this.item = item; }
+    public ItemBatch getBatchObj() { return batchObj; }
+    public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public AdjustmentType getAdjustmentType() { return adjustmentType; }
     public void setAdjustmentType(AdjustmentType adjustmentType) { this.adjustmentType = adjustmentType; }
     public int getQtyBefore() { return qtyBefore; }

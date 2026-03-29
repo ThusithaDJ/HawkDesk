@@ -61,7 +61,10 @@ public class ReportsPanel extends JPanel implements com.olympus.system.hawkdeskp
                 "PDF export requires JasperReports integration.", "Export", JOptionPane.INFORMATION_MESSAGE));
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_DASH));
+        JButton refreshBtn = new JButton("↺ Refresh");
+        refreshBtn.addActionListener(e -> loadDataAsync());
         btns.add(exportBtn);
+        btns.add(refreshBtn);
         btns.add(back);
         topBar.add(btns, BorderLayout.EAST);
         root.add(topBar, BorderLayout.NORTH);

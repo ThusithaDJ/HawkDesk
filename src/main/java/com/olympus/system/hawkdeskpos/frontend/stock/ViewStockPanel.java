@@ -1,5 +1,6 @@
 package com.olympus.system.hawkdeskpos.frontend.stock;
 
+import com.olympus.system.hawkdeskpos.dto.ItemDto;
 import com.olympus.system.hawkdeskpos.dto.StockBatchDto;
 import com.olympus.system.hawkdeskpos.dto.StockLevelDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
@@ -13,6 +14,7 @@ import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import javax.swing.table.*;
 import java.awt.*;
+import java.awt.event.*;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -45,7 +47,7 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
             "Item Name", "SKU", "Category", "Brand", "Qty", "Status", "Price (Rs.)", "Actions"
     };
     private static final String[] BATCH_COLS = {
-            "Item Name", "SKU / Variant", "Batch / GRN", "Qty", "Cost (Rs.)", "Sell (Rs.)", "Status"
+            "Item Name", "SKU / Variant", "Batch #", "Qty", "Cost (Rs.)", "Sell (Rs.)", "Expiry", "Status"
     };
 
     public ViewStockPanel(ItemService itemService, CategoryService categoryService, StockService stockService) {
@@ -85,6 +87,14 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         addBtn.setBorderPainted(false);
         addBtn.addActionListener(e -> Home.navigate(Home.CARD_ADD_ITEM));
         actionBar.add(addBtn);
+        JButton refreshBtn = new JButton("↺ Refresh");
+        refreshBtn.addActionListener(e -> {
+            searchField.setText("");
+            catFilter.setSelectedIndex(0);
+            statusFilter.setSelectedIndex(0);
+            loadDataAsync();
+        });
+        actionBar.add(refreshBtn);
         JButton backBtn = new JButton("← Back");
         backBtn.addActionListener(e -> Home.navigate(Home.CARD_DASH));
         actionBar.add(backBtn);
@@ -161,20 +171,41 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         table.getTableHeader().setBackground(new Color(0xF7, 0xF8, 0xFA));
         table.getTableHeader().setForeground(TEXT2);
         table.setAutoCreateRowSorter(true);
-        table.getSelectionModel().addListSelectionListener(e -> {
-            if (!e.getValueIsAdjusting() && table.getSelectedRow() >= 0) {
-                int modelRow = table.convertRowIndexToModel(table.getSelectedRow());
-                if (showBatchView) {
-                    if (allBatches != null && modelRow < allBatches.size()) {
-                        Home.navigateToEditItem(allBatches.get(modelRow).itemId());
-                    }
-                } else {
-                    if (allItems != null && modelRow < allItems.size()) {
-                        Home.navigateToEditItem(allItems.get(modelRow).itemId());
+        table.addMouseListener(new MouseAdapter() {
+            @Override public void mouseClicked(MouseEvent e) {
+                int viewRow = table.rowAtPoint(e.getPoint());
+                int col     = table.columnAtPoint(e.getPoint());
+                if (viewRow < 0) return;
+                int modelRow = table.convertRowIndexToModel(viewRow);
+
+                if (e.getClickCount() == 2) {
+                    showRowActionDialog(modelRow);
+                    return;
+                }
+
+                // Single click: Actions column in item view only (col 7)
+                if (e.getClickCount() == 1 && !showBatchView && col == 7) {
+                    Rectangle cell = table.getCellRect(viewRow, col, false);
+                    int relX  = e.getX() - cell.x;
+                    int third = cell.width / 3;
+                    if (relX < third) {
+                        // Edit button
+                        if (allItems != null && modelRow < allItems.size())
+                            Home.navigateToEditItem(allItems.get(modelRow).itemId());
+                    } else if (relX < 2 * third) {
+                        // Purchase button
+                        if (allItems != null && modelRow < allItems.size())
+                            Home.navigateToNewSaleWithItem(itemDtoFromLevel(allItems.get(modelRow)));
+                    } else {
+                        // Add Stock button
+                        if (allItems != null && modelRow < allItems.size())
+                            Home.navigateToReceiveStockWithItem(itemDtoFromLevel(allItems.get(modelRow)));
                     }
                 }
             }
         });
+
+        applyItemViewColumnSetup();
 
         JScrollPane scroll = new JScrollPane(table);
         scroll.setBorder(null);
@@ -241,6 +272,7 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         tableModel.setRowCount(0);
         table.setAutoCreateRowSorter(true); // re-attach sorter after column change
         toggleViewBtn.setText(showBatchView ? "☰ By Item" : "⊞ By Batch");
+        if (!showBatchView) applyItemViewColumnSetup();
         applyFilter();
     }
 
@@ -287,12 +319,15 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
 
     private void populateBatchTable(List<StockBatchDto> batches) {
         tableModel.setRowCount(0);
+        java.text.SimpleDateFormat sdf = new java.text.SimpleDateFormat("yyyy-MM-dd");
         for (StockBatchDto d : batches) {
+            String expiry = d.expiryDate() != null ? sdf.format(d.expiryDate()) : "—";
             tableModel.addRow(new Object[]{
                     d.itemName(), d.displaySku(), d.batch(),
                     d.qty(),
                     String.format("%.2f", d.costPrice()),
                     String.format("%.2f", d.sellingPrice()),
+                    expiry,
                     d.stockStatus()
             });
         }
@@ -325,5 +360,99 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
     private JLabel getLastLabel(JPanel p) {
         CardPanel card = (CardPanel) p.getComponent(p.getComponentCount() - 1);
         return (JLabel) card.getComponent(1);
+    }
+
+    // ── Actions column setup ──────────────────────────────────────────────────
+
+    private void applyItemViewColumnSetup() {
+        TableColumn actCol = table.getColumnModel().getColumn(7);
+        actCol.setCellRenderer(new ActionButtonRenderer());
+        actCol.setMinWidth(210);
+        actCol.setPreferredWidth(220);
+    }
+
+    // ── Double-click dialog ───────────────────────────────────────────────────
+
+    private void showRowActionDialog(int modelRow) {
+        String itemName;
+        if (showBatchView) {
+            if (allBatches == null || modelRow >= allBatches.size()) return;
+            itemName = allBatches.get(modelRow).itemName()
+                    + (allBatches.get(modelRow).batch().isBlank() ? "" : " [" + allBatches.get(modelRow).batch() + "]");
+        } else {
+            if (allItems == null || modelRow >= allItems.size()) return;
+            itemName = allItems.get(modelRow).itemName();
+        }
+
+        String[] options = {"Purchase", "Edit Item", "Add Stock"};
+        int choice = JOptionPane.showOptionDialog(
+                this,
+                "What would you like to do with:\n" + itemName,
+                "Select Action",
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null, options, options[0]);
+
+        if (choice < 0) return;
+
+        if (showBatchView) {
+            StockBatchDto batch = allBatches.get(modelRow);
+            ItemDto item = itemDtoFromBatch(batch);
+            switch (choice) {
+                case 0 -> Home.navigateToNewSaleWithItem(item);
+                case 1 -> Home.navigateToEditItem(batch.itemId());
+                case 2 -> Home.navigateToReceiveStockWithItem(item);
+            }
+        } else {
+            StockLevelDto level = allItems.get(modelRow);
+            ItemDto item = itemDtoFromLevel(level);
+            switch (choice) {
+                case 0 -> Home.navigateToNewSaleWithItem(item);
+                case 1 -> Home.navigateToEditItem(level.itemId());
+                case 2 -> Home.navigateToReceiveStockWithItem(item);
+            }
+        }
+    }
+
+    private ItemDto itemDtoFromLevel(StockLevelDto d) {
+        return new ItemDto(d.itemId(), d.itemName(), d.sku(),
+                d.categoryName(), d.brandName(),
+                "", d.stat(),
+                d.totalQty(), d.minLevel(), d.maxLevel(),
+                d.costPrice(), d.sellingPrice(),
+                0, "");
+    }
+
+    private ItemDto itemDtoFromBatch(StockBatchDto d) {
+        return new ItemDto(d.itemId(), d.itemName(), d.itemSku(),
+                "", "", "",
+                d.stat(),
+                d.qty(), d.minLevel(), 0,
+                d.costPrice(), d.sellingPrice(),
+                d.stockId(), d.batch());
+    }
+
+    // ── Actions cell renderer ─────────────────────────────────────────────────
+
+    private static class ActionButtonRenderer extends JPanel implements TableCellRenderer {
+        private final JButton editBtn  = new JButton("Edit");
+        private final JButton purchBtn = new JButton("Purchase");
+        private final JButton stockBtn = new JButton("Add Stock");
+
+        ActionButtonRenderer() {
+            setLayout(new GridLayout(1, 3, 2, 0));
+            setBorder(new EmptyBorder(4, 4, 4, 4));
+            setOpaque(true);
+            add(editBtn);
+            add(purchBtn);
+            add(stockBtn);
+        }
+
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value,
+                boolean isSelected, boolean hasFocus, int row, int col) {
+            setBackground(isSelected ? table.getSelectionBackground() : table.getBackground());
+            return this;
+        }
     }
 }

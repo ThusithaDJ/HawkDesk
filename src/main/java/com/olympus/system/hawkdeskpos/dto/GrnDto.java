@@ -20,6 +20,7 @@ public record GrnDto(
             double sellingPrice,
             int stockBefore,
             String variantSku,  // empty/null = no named variant; non-empty = find or create item_variant
-            String batchName    // empty/null = use GRN number as batch; non-empty = custom batch label
+            String batchName,   // batch number / label; auto-generated B{YYYY}-{NNN} if blank
+            java.util.Date expiryDate   // optional expiry date for the batch
     ) {}
 }

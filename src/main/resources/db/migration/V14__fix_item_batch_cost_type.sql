@@ -1,0 +1,2 @@
+ALTER TABLE item_batch
+    MODIFY COLUMN cost_price DOUBLE NOT NULL DEFAULT 0;

@@ -25,6 +25,7 @@ public class NavBar extends JPanel {
     private static final Color WHITE_DIM  = new Color(255, 255, 255, 178);
 
     private final JLabel clockLabel;
+    private JLabel shopLabel;
     private final List<NavButton> navButtons = new ArrayList<>();
     private Runnable logoutCallback;
 
@@ -43,7 +44,7 @@ public class NavBar extends JPanel {
         JPanel logo = buildLogoBox();
         left.add(logo);
 
-        JLabel shopLabel = new JLabel("HawkPOS — " + shopName);
+        shopLabel = new JLabel("HawkPOS — " + shopName);
         shopLabel.setFont(shopLabel.getFont().deriveFont(Font.BOLD, 16f));
         shopLabel.setForeground(WHITE);
         left.add(shopLabel);
@@ -59,6 +60,7 @@ public class NavBar extends JPanel {
                 new NavItem("View Stock",    "VIEW_STOCK",  Permission.VIEW_STOCK),
                 new NavItem("Receive Stock", "RECEIVE_STOCK", Permission.RECEIVE_STOCK),
                 new NavItem("Sales History", "SALES_HISTORY", Permission.VIEW_SALES),
+                new NavItem("Returns",       "ALL_RETURNS", Permission.PROCESS_RETURNS),
                 new NavItem("Reports",       "REPORTS",     Permission.VIEW_REPORTS),
                 new NavItem("Settings",      "SETTINGS",    Permission.ACCESS_SETTINGS)
         );
@@ -159,20 +161,35 @@ public class NavBar extends JPanel {
     }
 
     private static JPanel buildLogoBox() {
-        JPanel box = new JPanel() {
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(new Color(255, 255, 255, 38));
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 7, 7);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        box.setOpaque(false);
-        box.setPreferredSize(new Dimension(28, 28));
-        return box;
+    Image logoImg;
+    try {
+        logoImg = new ImageIcon(
+            NavBar.class.getResource("/images/icons/hawkpos-icon.png")
+        ).getImage().getScaledInstance(20, 20, Image.SCALE_SMOOTH);
+    } catch (Exception e) {
+        logoImg = null;
     }
+
+    final Image img = logoImg;
+
+    JPanel box = new JPanel() {
+        @Override protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(new Color(255, 255, 255, 38));
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 7, 7);
+            if (img != null) {
+                int pad = 4;
+                g2.drawImage(img, pad, pad, getWidth() - pad * 2, getHeight() - pad * 2, this);
+            }
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    };
+    box.setOpaque(false);
+    box.setPreferredSize(new Dimension(28, 28));
+    return box;
+}
 
     private static String roleLabel(String role) {
         return switch (role) {
@@ -181,6 +198,10 @@ public class NavBar extends JPanel {
             case "STOCK_KEEPER" -> "Stock Keeper";
             default             -> "Cashier";
         };
+    }
+
+    public void updateShopName(String name) {
+        shopLabel.setText("HawkPOS — " + name);
     }
 
     // ── Nav button component ──────────────────────────────────────────────────

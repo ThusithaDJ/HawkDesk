@@ -64,8 +64,11 @@ public class StockAdjustmentPanel extends JPanel {
         header.add(title, BorderLayout.WEST);
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_STOCK));
+        JButton clearBtn = new JButton("↺ Clear");
+        clearBtn.addActionListener(e -> resetForm());
         JPanel hBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         hBtns.setOpaque(false);
+        hBtns.add(clearBtn);
         hBtns.add(back);
         header.add(hBtns, BorderLayout.EAST);
         root.add(header, BorderLayout.NORTH);
@@ -288,6 +291,16 @@ public class StockAdjustmentPanel extends JPanel {
         row.add(cancel);
         row.add(apply);
         return row;
+    }
+
+    private void resetForm() {
+        selectedItem = null;
+        selectedItemLabel.setText("No item selected — search above");
+        currentQtyLabel.setText("—");
+        afterQtyLabel.setText("—");
+        if (qtySpinner != null) qtySpinner.setValue(1);
+        if (notesArea  != null) notesArea.setText("");
+        selectType("ADD");
     }
 
     private void applyAdjustment() {

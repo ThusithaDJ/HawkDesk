@@ -110,8 +110,27 @@ public class SaleService {
                 }
 
                 if (stock != null) {
-                    stock.setQty(Math.max(0, stock.getQty() - line.qty()));
-                    session.merge(stock);
+                    int newQty = Math.max(0, stock.getQty() - line.qty());
+                    // Explicit HQL UPDATE guarantees the SQL is issued regardless of dirty-check
+                    session.createMutationQuery(
+                            "UPDATE Stock s SET s.qty = :newQty WHERE s.stockId = :id")
+                            .setParameter("newQty", newQty)
+                            .setParameter("id", stock.getStockId())
+                            .executeUpdate();
+                    // Keep ItemBatch qty_remaining in sync
+                    if (stock.getBatchObj() != null) {
+                        ItemBatch batch = stock.getBatchObj();
+                        int newRemaining = Math.max(0, batch.getQtyRemaining() - line.qty());
+                        com.olympus.system.hawkdeskpos.db.dao.BatchStatus newStatus =
+                                newRemaining == 0 ? com.olympus.system.hawkdeskpos.db.dao.BatchStatus.EMPTY
+                                                  : batch.getStatus();
+                        session.createMutationQuery(
+                                "UPDATE ItemBatch b SET b.qtyRemaining = :qty, b.status = :status WHERE b.batchId = :id")
+                                .setParameter("qty", newRemaining)
+                                .setParameter("status", newStatus)
+                                .setParameter("id", batch.getBatchId())
+                                .executeUpdate();
+                    }
                 }
                 Invoice inv = new Invoice();
                 inv.setInvoiceinfo(header);
@@ -121,6 +140,10 @@ public class SaleService {
                 inv.setSubTotal(line.lineTotal());
                 inv.setDateTime(new Date());
                 inv.setEmployee(emp);
+                if (stock != null && stock.getBatchObj() != null) {
+                    inv.setBatch(stock.getBatchObj().getBatchNumber());
+                    inv.setBatchObj(stock.getBatchObj());
+                }
                 session.persist(inv);
             }
             tx.commit();
@@ -213,6 +236,8 @@ public class SaleService {
                     }
                     String batch = inv.getStock() != null && inv.getStock().getBatch() != null
                             ? inv.getStock().getBatch() : "";
+                    String unit  = inv.getItem() != null && inv.getItem().getUnit() != null
+                            ? inv.getItem().getUnit() : "";
                     return new SaleLineDto(
                             inv.getItem() != null ? inv.getItem().getItemId() : 0,
                             inv.getStock() != null ? inv.getStock().getStockId() : 0,
@@ -221,7 +246,7 @@ public class SaleService {
                             inv.getQty() != null ? inv.getQty() : 0,
                             inv.getStock() != null && inv.getStock().getPrice() != null ? inv.getStock().getPrice() : 0,
                             inv.getSubTotal() != null ? inv.getSubTotal() : 0,
-                            batch);
+                            batch, unit);
                 })
                 .collect(Collectors.toList());
         return new InvoiceDto(ii.getInvoiceNo(), ii.getDate(),

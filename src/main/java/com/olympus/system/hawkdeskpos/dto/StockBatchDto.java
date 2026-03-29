@@ -7,12 +7,13 @@ public record StockBatchDto(
         String itemName,
         String itemSku,      // item-level SKU
         String displaySku,   // variant SKU if set, otherwise item SKU
-        String batch,
+        String batch,        // batch number / label
         int qty,
         int minLevel,
         double costPrice,
         double sellingPrice,
-        String stat
+        String stat,
+        java.util.Date expiryDate   // null if no expiry set
 ) {
     public String stockStatus() {
         if (qty <= 0) return "OUT";

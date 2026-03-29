@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ls:*)",
+      "Bash(find /d/Dev/Workspaces/NetBeans/Products/HawkDesk/HawkDeskPOS -maxdepth 2 -type d ! -path */target* ! -path */.git* ! -path */.idea* ! -path */.mvn*)"
+    ]
+  }
+}

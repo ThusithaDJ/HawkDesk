@@ -126,7 +126,8 @@ public class AuthService {
                     p.isCanEditItem(), p.isCanReceiveStock(), p.isCanAdjustStock(),
                     p.isCanManageCategories(), p.isCanDeleteCategories(),
                     p.isCanViewReports(), p.isCanExportReports(), p.isCanViewGrn(),
-                    p.isCanAccessSettings(), p.isCanManageUsers(), p.isCanAccessBackup());
+                    p.isCanAccessSettings(), p.isCanManageUsers(), p.isCanAccessBackup(),
+                    p.isCanViewBatchCost(), p.isCanOverrideFifo());
         } catch (Exception e) {
             return PermissionsDto.fullAccess(employeeId);
         }

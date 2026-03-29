@@ -9,5 +9,6 @@ public record SaleLineDto(
         int qty,
         double unitPrice,
         double lineTotal,
-        String batch       // batch / GRN number from the stock record; empty string when unknown
+        String batch,      // batch / GRN number from the stock record; empty string when unknown
+        String unit        // unit of measure (e.g. "pcs", "kg"); empty string when unknown
 ) {}

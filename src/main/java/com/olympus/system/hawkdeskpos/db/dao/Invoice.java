@@ -32,6 +32,10 @@ public class Invoice implements Serializable {
     @Column(name = "batch", length = 45)
     private String batch;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batch_id")
+    private ItemBatch batchObj;
+
     @Temporal(TemporalType.TIMESTAMP)
     @Column(name = "date_time")
     private Date dateTime;
@@ -56,6 +60,8 @@ public class Invoice implements Serializable {
     public void setEmployee(Employee employee) { this.employee = employee; }
     public String getBatch() { return batch; }
     public void setBatch(String batch) { this.batch = batch; }
+    public ItemBatch getBatchObj() { return batchObj; }
+    public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public Date getDateTime() { return dateTime; }
     public void setDateTime(Date dateTime) { this.dateTime = dateTime; }
     public Integer getQty() { return qty; }

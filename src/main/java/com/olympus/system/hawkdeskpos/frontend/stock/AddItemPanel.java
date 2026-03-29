@@ -65,8 +65,11 @@ public class AddItemPanel extends JPanel {
         header.add(title, BorderLayout.WEST);
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_STOCK));
+        JButton clearBtn = new JButton("↺ Clear");
+        clearBtn.addActionListener(e -> clearForm());
         JPanel hBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         hBtns.setOpaque(false);
+        hBtns.add(clearBtn);
         hBtns.add(back);
         header.add(hBtns, BorderLayout.EAST);
         root.add(header, BorderLayout.NORTH);

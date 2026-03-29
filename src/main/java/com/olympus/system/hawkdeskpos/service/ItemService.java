@@ -86,7 +86,7 @@ public class ItemService {
                     results.addAll(expandToVariants(v.getItem()));
                 }
             }
-            return results.stream().limit(10).collect(Collectors.toList());
+            return results.stream().limit(20).collect(Collectors.toList());
         } catch (Exception e) {
             System.err.println("ItemService.searchForSale: " + e.getMessage());
             return Collections.emptyList();
@@ -130,21 +130,27 @@ public class ItemService {
                                 0,
                                 item.getMinLevel() != null ? item.getMinLevel() : 5,
                                 item.getMaxLevel() != null ? item.getMaxLevel() : 100,
-                                0, 0, 0));
+                                0, 0, 0, ""));
                     }
                 });
 
-        // Unnamed stocks (no variant) → aggregate, sell FIFO
+        // Unnamed stocks (no variant) → one result per batch so the user can pick
         List<Stock> unnamed = activeStocks.stream()
                 .filter(s -> s.getVariant() == null)
                 .collect(Collectors.toList());
         if (!unnamed.isEmpty()) {
-            int totalQty = unnamed.stream().mapToInt(s -> s.getQty() != null ? s.getQty() : 0).sum();
-            Stock sellFrom = unnamed.stream()
+            List<Stock> withQty = unnamed.stream()
                     .filter(s -> s.getQty() != null && s.getQty() > 0)
-                    .min(Comparator.comparingInt(Stock::getStockId))
-                    .orElse(unnamed.get(0));
-            results.add(toStockDtoAggregated(sellFrom, item, totalQty));
+                    .sorted(Comparator.comparingInt(Stock::getStockId))
+                    .collect(Collectors.toList());
+            if (withQty.isEmpty()) {
+                // All batches empty — show one OUT entry so the item is still visible
+                results.add(toStockDtoAggregated(unnamed.get(0), item, 0));
+            } else {
+                for (Stock s : withQty) {
+                    results.add(toStockDtoAggregated(s, item, s.getQty()));
+                }
+            }
         }
 
         if (results.isEmpty()) {
@@ -165,7 +171,8 @@ public class ItemService {
                 item.getMaxLevel() != null ? item.getMaxLevel() : 100,
                 sellFrom.getCost()  != null ? sellFrom.getCost()  : 0,
                 sellFrom.getPrice() != null ? sellFrom.getPrice() : 0,
-                sellFrom.getStockId());
+                sellFrom.getStockId(),
+                sellFrom.getBatch() != null ? sellFrom.getBatch() : "");
     }
 
     private ItemDto toStockDtoAggregated(Stock sellFrom, Item item, int totalQty) {
@@ -181,7 +188,8 @@ public class ItemService {
                 item.getMaxLevel() != null ? item.getMaxLevel() : 100,
                 sellFrom.getCost()  != null ? sellFrom.getCost()  : 0,
                 sellFrom.getPrice() != null ? sellFrom.getPrice() : 0,
-                sellFrom.getStockId());
+                sellFrom.getStockId(),
+                sellFrom.getBatch() != null ? sellFrom.getBatch() : "");
     }
 
     /** All items as StockLevelDto (for ViewStockPanel). */
@@ -324,7 +332,36 @@ public class ItemService {
                 cat, brand, item.getUnit() != null ? item.getUnit() : "pcs",
                 item.getStat() != null ? item.getStat() : "Active",
                 qty, item.getMinLevel() != null ? item.getMinLevel() : 5,
-                item.getMaxLevel() != null ? item.getMaxLevel() : 100, cost, price, 0);
+                item.getMaxLevel() != null ? item.getMaxLevel() : 100, cost, price, 0, "");
+    }
+
+    /** Current available qty for a specific stock record. Used for cart availability checks. */
+    public int getAvailableQtyForStock(int stockId) {
+        try (var session = sf.openSession()) {
+            Stock s = session.get(Stock.class, stockId);
+            return (s != null && s.getQty() != null) ? s.getQty() : 0;
+        } catch (Exception e) {
+            return 0;
+        }
+    }
+
+    /** All active stocks for an item as ItemDtos — used by the batch picker dialog. */
+    public List<ItemDto> listBatchesForSale(int itemId) {
+        try (var session = sf.openSession()) {
+            Item item = session.createQuery(
+                    "FROM Item i LEFT JOIN FETCH i.category LEFT JOIN FETCH i.brands " +
+                    "LEFT JOIN FETCH i.stocks WHERE i.itemId = :id", Item.class)
+                    .setParameter("id", itemId).uniqueResult();
+            if (item == null) return Collections.emptyList();
+            return item.getStocks().stream()
+                    .filter(s -> "Active".equals(s.getStat()) && s.getQty() != null && s.getQty() > 0)
+                    .sorted(Comparator.comparingInt(Stock::getStockId))
+                    .map(s -> toStockDtoAggregated(s, item, s.getQty()))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            System.err.println("ItemService.listBatchesForSale: " + e.getMessage());
+            return Collections.emptyList();
+        }
     }
 
     private StockLevelDto toStockLevelDto(Item item) {
