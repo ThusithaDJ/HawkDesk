@@ -41,6 +41,9 @@ public class StockAdjustment {
     @Column(name = "notes", length = 512)
     private String notes;
 
+    @Column(name = "reference", length = 100)
+    private String reference;
+
     @Column(name = "loss_value", precision = 12, scale = 2)
     private BigDecimal lossValue;
 
@@ -70,6 +73,8 @@ public class StockAdjustment {
     public void setReason(String reason) { this.reason = reason; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public String getReference() { return reference; }
+    public void setReference(String reference) { this.reference = reference; }
     public BigDecimal getLossValue() { return lossValue; }
     public void setLossValue(BigDecimal lossValue) { this.lossValue = lossValue; }
     public Employee getEmployee() { return employee; }

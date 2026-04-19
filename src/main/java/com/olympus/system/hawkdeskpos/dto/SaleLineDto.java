@@ -6,9 +6,10 @@ public record SaleLineDto(
         int stockId,
         String itemName,
         String sku,
-        int qty,
+        double qty,
         double unitPrice,
         double lineTotal,
         String batch,      // batch / GRN number from the stock record; empty string when unknown
-        String unit        // unit of measure (e.g. "pcs", "kg"); empty string when unknown
+        String unit,       // unit of measure (e.g. "pcs", "kg"); empty string when unknown
+        double costPrice   // unit cost at time of sale; 0 when not yet recorded (historical data)
 ) {}

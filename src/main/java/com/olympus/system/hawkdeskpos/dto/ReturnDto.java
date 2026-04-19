@@ -8,9 +8,16 @@ public record ReturnDto(
         String invoiceNo,
         Date   returnDate,
         String itemName,
+        int    itemId,
         int    stockId,
-        int    qty,
+        double qty,
         String reason,
         String refundMethod,
-        String cashierName
+        String stat,
+        String resolveAction,
+        Integer linkedGrnNo,
+        String cashierName,
+        double originalSaleCost,   // cost_price * qty from invoice line; 0 if not recorded
+        String customerRef,        // customer name for exchange returns assigned to a customer
+        String resolvedInvoiceNo   // invoice number when exchange credit was applied to a sale
 ) {}

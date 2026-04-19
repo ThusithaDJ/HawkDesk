@@ -34,8 +34,14 @@ public class Item implements Serializable {
     @Column(name = "max_level")
     private Integer maxLevel = 100;
 
-    @Column(name = "unit", length = 20)
-    private String unit = "pcs";
+    @Column(name = "sec_unit", length = 20)
+    private String secUnit = "pcs";
+
+    @Column(name = "sell_unit", length = 20)
+    private String sellUnit;
+
+    @Column(name = "conversion_factor", columnDefinition = "DECIMAL")
+    private Double conversionFactor = 1.0;
 
     @Column(name = "stat", length = 45)
     private String stat = "Active";
@@ -72,8 +78,12 @@ public class Item implements Serializable {
     public void setMinLevel(Integer minLevel) { this.minLevel = minLevel; }
     public Integer getMaxLevel() { return maxLevel; }
     public void setMaxLevel(Integer maxLevel) { this.maxLevel = maxLevel; }
-    public String getUnit() { return unit; }
-    public void setUnit(String unit) { this.unit = unit; }
+    public String getSecUnit() { return secUnit; }
+    public void setSecUnit(String secUnit) { this.secUnit = secUnit; }
+    public String getSellUnit() { return sellUnit; }
+    public void setSellUnit(String sellUnit) { this.sellUnit = sellUnit; }
+    public Double getConversionFactor() { return conversionFactor; }
+    public void setConversionFactor(Double conversionFactor) { this.conversionFactor = conversionFactor; }
     public String getStat() { return stat; }
     public void setStat(String stat) { this.stat = stat; }
     public Set<Stock> getStocks() { return stocks; }

@@ -41,13 +41,13 @@ public class Stock implements Serializable {
     @Column(name = "expire_date")
     private Date expireDate;
 
-    @Column(name = "qty")
-    private Integer qty;
+    @Column(name = "qty", columnDefinition = "DECIMAL")
+    private Double qty;
 
-    @Column(name = "cost")
+    @Column(name = "cost", columnDefinition = "DECIMAL")
     private Double cost;
 
-    @Column(name = "price")
+    @Column(name = "price", columnDefinition = "DECIMAL")
     private Double price;
 
     @Column(name = "stat", length = 45)
@@ -78,8 +78,8 @@ public class Stock implements Serializable {
     public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public Date getExpireDate() { return expireDate; }
     public void setExpireDate(Date expireDate) { this.expireDate = expireDate; }
-    public Integer getQty() { return qty; }
-    public void setQty(Integer qty) { this.qty = qty; }
+    public Double getQty() { return qty; }
+    public void setQty(Double qty) { this.qty = qty; }
     public Double getCost() { return cost; }
     public void setCost(Double cost) { this.cost = cost; }
     public Double getPrice() { return price; }

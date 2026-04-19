@@ -106,6 +106,17 @@ public class AuthService {
         }
     }
 
+    /** Verifies a raw PIN against the stored hash for the given employee without side effects. */
+    public boolean verifyPin(long employeeId, String rawPin) {
+        try (var session = sf.openSession()) {
+            Employee emp = session.get(Employee.class, employeeId);
+            if (emp == null || !emp.isActive()) return false;
+            return BCrypt.checkpw(rawPin, emp.getPinHash());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // ── Private helpers ────────────────────────────────────────────────────────
 
     private EmployeeDto toDto(Employee emp) {

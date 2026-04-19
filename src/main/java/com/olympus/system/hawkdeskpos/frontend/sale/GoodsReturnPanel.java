@@ -1,11 +1,14 @@
 package com.olympus.system.hawkdeskpos.frontend.sale;
 
+import com.olympus.system.hawkdeskpos.dto.CustomerDto;
 import com.olympus.system.hawkdeskpos.dto.InvoiceDto;
 import com.olympus.system.hawkdeskpos.dto.ReturnDto;
 import com.olympus.system.hawkdeskpos.dto.SaleLineDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
 import com.olympus.system.hawkdeskpos.frontend.components.ConfirmDialog;
+import com.olympus.system.hawkdeskpos.service.CashAccountService;
+import com.olympus.system.hawkdeskpos.service.CustomerService;
 import com.olympus.system.hawkdeskpos.service.ReturnService;
 import com.olympus.system.hawkdeskpos.service.SaleService;
 import com.olympus.system.hawkdeskpos.service.SettingsService;
@@ -42,16 +45,18 @@ public class GoodsReturnPanel extends JPanel {
     private static final String[] REASONS = {"Damaged", "Wrong item", "Customer change of mind", "Other"};
     private static final String[] ITEM_COLS = {"", "Item", "Unit", "Orig. Qty", "Remaining", "Return Qty", "Reason"};
 
-    private final SaleService     saleService;
-    private final ReturnService   returnService;
-    private final SettingsService settingsService;
+    private final SaleService        saleService;
+    private final ReturnService      returnService;
+    private final SettingsService    settingsService;
+    private final CashAccountService cashAccountService;
+    private final CustomerService    customerService;
 
     // State
     private InvoiceDto      currentInvoice;
     private List<ReturnDto> previousReturns = new ArrayList<>();
     /** Active lines (remaining > 0), parallel to table rows. */
     private final List<SaleLineDto> activeLines     = new ArrayList<>();
-    private final List<Integer>     remainingQtys   = new ArrayList<>();
+    private final List<Double>      remainingQtys   = new ArrayList<>();
 
     // Search widgets
     private JTextField invoiceField;
@@ -77,9 +82,22 @@ public class GoodsReturnPanel extends JPanel {
 
     public GoodsReturnPanel(SaleService saleService, ReturnService returnService,
                             SettingsService settingsService) {
-        this.saleService     = saleService;
-        this.returnService   = returnService;
-        this.settingsService = settingsService;
+        this(saleService, returnService, settingsService, null, null);
+    }
+
+    public GoodsReturnPanel(SaleService saleService, ReturnService returnService,
+                            SettingsService settingsService, CashAccountService cashAccountService) {
+        this(saleService, returnService, settingsService, cashAccountService, null);
+    }
+
+    public GoodsReturnPanel(SaleService saleService, ReturnService returnService,
+                            SettingsService settingsService, CashAccountService cashAccountService,
+                            CustomerService customerService) {
+        this.saleService        = saleService;
+        this.returnService      = returnService;
+        this.settingsService    = settingsService;
+        this.cashAccountService = cashAccountService;
+        this.customerService    = customerService;
         setBackground(BG);
         setLayout(new BorderLayout(0, 0));
         buildUI();
@@ -198,15 +216,15 @@ public class GoodsReturnPanel extends JPanel {
     private DefaultTableModel buildItemsModel() {
         DefaultTableModel m = new DefaultTableModel(ITEM_COLS, 0) {
             @Override public Class<?> getColumnClass(int c) {
-                return c == 0 ? Boolean.class : (c == 3 || c == 4 || c == 5) ? Integer.class : String.class;
+                return c == 0 ? Boolean.class : (c == 3 || c == 4 || c == 5) ? Double.class : String.class;
             }
             @Override public boolean isCellEditable(int r, int c) { return c == 0 || c == 5 || c == 6; }
             @Override public void setValueAt(Object val, int r, int c) {
                 if (c == 5) {
-                    int max = (r < remainingQtys.size()) ? remainingQtys.get(r) : 1;
-                    int v = 1;
-                    try { v = Integer.parseInt(val.toString().trim()); } catch (NumberFormatException ignored) {}
-                    v = Math.max(1, Math.min(v, max));
+                    double max = (r < remainingQtys.size()) ? remainingQtys.get(r) : 1.0;
+                    double v = 1.0;
+                    try { v = Double.parseDouble(val.toString().trim()); } catch (NumberFormatException ignored) {}
+                    v = Math.max(0.001, Math.min(v, max));
                     super.setValueAt(v, r, c);
                     return;
                 }
@@ -319,7 +337,7 @@ public class GoodsReturnPanel extends JPanel {
         JPanel left = new JPanel(new FlowLayout(FlowLayout.LEFT, 16, 0));
         left.setOpaque(false);
 
-        refundMethodCombo = new JComboBox<>(new String[]{"Cash", "Store Credit", "Exchange", "Void"});
+        refundMethodCombo = new JComboBox<>(new String[]{"Cash", "Exchange"});
         refundMethodCombo.setPreferredSize(new Dimension(140, 30));
 
         totalRefundLabel = new JLabel("Rs. 0.00");
@@ -425,16 +443,16 @@ public class GoodsReturnPanel extends JPanel {
 
     private void populateItemsTable(InvoiceDto inv, List<ReturnDto> rets) {
         // Compute already-returned qty per stockId
-        Map<Integer, Integer> alreadyRet = new HashMap<>();
-        for (ReturnDto r : rets) alreadyRet.merge(r.stockId(), r.qty(), Integer::sum);
+        Map<Integer, Double> alreadyRet = new HashMap<>();
+        for (ReturnDto r : rets) alreadyRet.merge(r.stockId(), r.qty(), Double::sum);
 
         activeLines.clear();
         remainingQtys.clear();
         itemsModel.setRowCount(0);
 
         for (SaleLineDto line : inv.lines()) {
-            int returned  = alreadyRet.getOrDefault(line.stockId(), 0);
-            int remaining = line.qty() - returned;
+            double returned  = alreadyRet.getOrDefault(line.stockId(), 0.0);
+            double remaining = line.qty() - returned;
             if (remaining <= 0) continue;
 
             activeLines.add(line);
@@ -445,7 +463,7 @@ public class GoodsReturnPanel extends JPanel {
                     (line.unit() != null && !line.unit().isEmpty()) ? line.unit() : "—",
                     line.qty(),
                     remaining,
-                    1,
+                    Math.min(1.0, remaining),
                     REASONS[0]
             });
         }
@@ -500,13 +518,18 @@ public class GoodsReturnPanel extends JPanel {
     // ── Recalculate refund total ──────────────────────────────────────────────
 
     private void recalcTotal() {
+        double subTot = currentInvoice != null ? currentInvoice.subTotal() : 0;
+        double netTot = currentInvoice != null ? currentInvoice.netTotal() : 0;
+        // If subTotal is 0 (legacy row without new cols), fall back to 1:1 ratio
+        double discountRatio = (subTot > 0) ? (netTot / subTot) : 1.0;
+
         double total = 0;
         for (int i = 0; i < itemsModel.getRowCount(); i++) {
             Object checked = itemsModel.getValueAt(i, 0);
             if (Boolean.TRUE.equals(checked) && i < activeLines.size()) {
                 Object qtyObj = itemsModel.getValueAt(i, 5);
-                int qty = (qtyObj instanceof Number n) ? n.intValue() : 1;
-                total += activeLines.get(i).unitPrice() * qty;
+                double qty = (qtyObj instanceof Number n) ? n.doubleValue() : 1.0;
+                total += activeLines.get(i).unitPrice() * qty * discountRatio;
             }
         }
         totalRefundLabel.setText(String.format("Rs. %,.2f", total));
@@ -521,15 +544,15 @@ public class GoodsReturnPanel extends JPanel {
         }
         if (itemsTable.isEditing()) itemsTable.getCellEditor().stopCellEditing();
 
-        Map<Integer, Integer> returnLines = new LinkedHashMap<>();
+        Map<Integer, Double> returnLines = new LinkedHashMap<>();
         String lastReason = REASONS[0];
 
         for (int i = 0; i < itemsModel.getRowCount(); i++) {
             if (Boolean.TRUE.equals(itemsModel.getValueAt(i, 0)) && i < activeLines.size()) {
-                int stockId = activeLines.get(i).stockId();
-                int qty     = ((Number) itemsModel.getValueAt(i, 5)).intValue();
+                int    stockId = activeLines.get(i).stockId();
+                double qty     = ((Number) itemsModel.getValueAt(i, 5)).doubleValue();
                 returnLines.put(stockId, qty);
-                lastReason  = (String) itemsModel.getValueAt(i, 6);
+                lastReason     = (String) itemsModel.getValueAt(i, 6);
             }
         }
         if (returnLines.isEmpty()) {
@@ -543,12 +566,51 @@ public class GoodsReturnPanel extends JPanel {
         Long empId = SessionContext.current() != null ? SessionContext.current().getEmployee().id() : null;
         final String method = (String) refundMethodCombo.getSelectedItem();
         final String reason = lastReason;
-        final Map<Integer, Integer> lines = returnLines;
+        final Map<Integer, Double> lines = returnLines;
+
+        // For Exchange returns: optionally assign to a customer
+        Integer exchangeCustomerId = null;
+        if ("Exchange".equals(method) && customerService != null) {
+            int choice = JOptionPane.showConfirmDialog(this,
+                    "Assign this exchange return to a customer?\n" +
+                    "(This allows the customer's exchange credit to appear in the New Sale screen.)",
+                    "Assign to Customer?", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+            if (choice == JOptionPane.YES_OPTION) {
+                exchangeCustomerId = pickExchangeCustomer();
+                if (exchangeCustomerId == null) return; // cancelled
+            }
+        }
+        final Integer finalCustomerId = exchangeCustomerId;
+
+        // Calculate total refund amount for history logging (proportional discount applied)
+        double subTot = currentInvoice.subTotal();
+        double netTot = currentInvoice.netTotal();
+        double discountRatio = (subTot > 0) ? (netTot / subTot) : 1.0;
+        double totalRefundAmount = 0;
+        for (int i = 0; i < itemsModel.getRowCount(); i++) {
+            if (Boolean.TRUE.equals(itemsModel.getValueAt(i, 0)) && i < activeLines.size()) {
+                double qty = ((Number) itemsModel.getValueAt(i, 5)).doubleValue();
+                totalRefundAmount += activeLines.get(i).unitPrice() * qty * discountRatio;
+            }
+        }
+        // Determine if full or partial return
+        boolean allReturned = returnLines.size() == activeLines.size();
+        final com.olympus.system.hawkdeskpos.db.dao.InvoiceHistory.EventType histEventType =
+                allReturned ? com.olympus.system.hawkdeskpos.db.dao.InvoiceHistory.EventType.RETURNED
+                            : com.olympus.system.hawkdeskpos.db.dao.InvoiceHistory.EventType.PARTIAL_RETURN;
+        final double finalRefundAmt = totalRefundAmount;
+        final String histNotes = method + " refund — " + reason;
+        final String invNo = currentInvoice.invoiceNo();
 
         processBtn.setEnabled(false);
         new SwingWorker<Void, Void>() {
             @Override protected Void doInBackground() {
-                returnService.processReturn(currentInvoice.invoiceNo(), lines, reason, method, empId);
+                returnService.processReturn(invNo, lines, reason, method, empId, finalCustomerId);
+                saleService.logInvoiceEvent(invNo, histEventType, finalRefundAmt, histNotes, empId);
+                // Record cash outflow for all Cash refunds
+                if (cashAccountService != null && "Cash".equals(method) && finalRefundAmt > 0) {
+                    cashAccountService.recordReturnRefund(finalRefundAmt, "Return Refund", invNo, empId);
+                }
                 return null;
             }
             @Override protected void done() {
@@ -565,6 +627,90 @@ public class GoodsReturnPanel extends JPanel {
                 }
             }
         }.execute();
+    }
+
+    /**
+     * Shows a customer selection dialog and returns the selected customer ID,
+     * or null if the user cancels.
+     */
+    private Integer pickExchangeCustomer() {
+        JDialog dlg = new JDialog((java.awt.Frame) SwingUtilities.getWindowAncestor(this),
+                "Select Customer for Exchange", true);
+        dlg.setSize(480, 360);
+        dlg.setLocationRelativeTo(this);
+        dlg.setLayout(new BorderLayout(0, 8));
+
+        JTextField search = new JTextField();
+        search.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createLineBorder(new Color(0xC8, 0xCD, 0xD6)),
+                new EmptyBorder(6, 10, 6, 10)));
+
+        String[] cols = {"Name", "Phone", "Address"};
+        javax.swing.table.DefaultTableModel m = new javax.swing.table.DefaultTableModel(cols, 0) {
+            @Override public boolean isCellEditable(int r, int c) { return false; }
+        };
+        JTable tbl = new JTable(m);
+        tbl.setRowHeight(32);
+        tbl.setSelectionMode(javax.swing.ListSelectionModel.SINGLE_SELECTION);
+
+        java.util.concurrent.atomic.AtomicReference<List<CustomerDto>> resultRef =
+                new java.util.concurrent.atomic.AtomicReference<>();
+        java.util.concurrent.atomic.AtomicInteger selectedId = new java.util.concurrent.atomic.AtomicInteger(-1);
+
+        Runnable doSearch = () -> new SwingWorker<List<CustomerDto>, Void>() {
+            @Override protected List<CustomerDto> doInBackground() {
+                String q = search.getText().trim();
+                return q.isEmpty() ? customerService.listAll() : customerService.search(q);
+            }
+            @Override protected void done() {
+                try {
+                    List<CustomerDto> list = get();
+                    resultRef.set(list);
+                    m.setRowCount(0);
+                    for (CustomerDto c : list) m.addRow(new Object[]{c.name(), c.phone(), c.address()});
+                    if (!list.isEmpty()) tbl.setRowSelectionInterval(0, 0);
+                } catch (Exception ignored) {}
+            }
+        }.execute();
+
+        search.getDocument().addDocumentListener(new javax.swing.event.DocumentListener() {
+            public void insertUpdate(javax.swing.event.DocumentEvent e) { doSearch.run(); }
+            public void removeUpdate(javax.swing.event.DocumentEvent e) { doSearch.run(); }
+            public void changedUpdate(javax.swing.event.DocumentEvent e) {}
+        });
+
+        JPanel top = new JPanel(new BorderLayout(0, 4));
+        top.setBorder(new EmptyBorder(8, 8, 0, 8));
+        top.add(new JLabel("Search customer:"), BorderLayout.WEST);
+        top.add(search, BorderLayout.CENTER);
+        dlg.add(top, BorderLayout.NORTH);
+        dlg.add(new JScrollPane(tbl), BorderLayout.CENTER);
+
+        JPanel btns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 8));
+        JButton cancel = new JButton("Cancel");
+        cancel.addActionListener(e -> { selectedId.set(-1); dlg.dispose(); });
+        JButton select = new JButton("Select");
+        select.setBackground(NAVY);
+        select.setForeground(Color.WHITE);
+        select.setOpaque(true);
+        select.setBorderPainted(false);
+        select.addActionListener(e -> {
+            int row = tbl.getSelectedRow();
+            List<CustomerDto> list = resultRef.get();
+            if (row >= 0 && list != null && row < list.size()) {
+                selectedId.set(list.get(row).customerId());
+            }
+            dlg.dispose();
+        });
+        btns.add(cancel);
+        btns.add(select);
+        dlg.add(btns, BorderLayout.SOUTH);
+
+        doSearch.run();
+        dlg.setVisible(true);
+
+        int id = selectedId.get();
+        return id > 0 ? id : null;
     }
 
     // ── Clear / reset ─────────────────────────────────────────────────────────

@@ -56,13 +56,15 @@ public class NavBar extends JPanel {
         centre.setOpaque(false);
 
         List<NavItem> items = List.of(
-                new NavItem("New Sale",      "NEW_SALE",    Permission.MAKE_SALE),
-                new NavItem("View Stock",    "VIEW_STOCK",  Permission.VIEW_STOCK),
-                new NavItem("Receive Stock", "RECEIVE_STOCK", Permission.RECEIVE_STOCK),
-                new NavItem("Sales History", "SALES_HISTORY", Permission.VIEW_SALES),
-                new NavItem("Returns",       "ALL_RETURNS", Permission.PROCESS_RETURNS),
-                new NavItem("Reports",       "REPORTS",     Permission.VIEW_REPORTS),
-                new NavItem("Settings",      "SETTINGS",    Permission.ACCESS_SETTINGS)
+                new NavItem("New Sale",        "NEW_SALE",       Permission.MAKE_SALE),
+                new NavItem("View Stock",      "VIEW_STOCK",     Permission.VIEW_STOCK),
+                new NavItem("Receive Stock",   "RECEIVE_STOCK",  Permission.RECEIVE_STOCK),
+                new NavItem("Sales History",   "SALES_HISTORY",  Permission.VIEW_SALES),
+                new NavItem("Credit Invoices", "CREDIT_INVOICES",Permission.VIEW_SALES),
+                new NavItem("Customers",       "CUSTOMERS",      Permission.MAKE_SALE),
+                new NavItem("Returns",         "ALL_RETURNS",    Permission.PROCESS_RETURNS),
+                new NavItem("Reports",         "REPORTS",        Permission.VIEW_REPORTS),
+                new NavItem("Settings",        "SETTINGS",       Permission.ACCESS_SETTINGS)
         );
 
         for (NavItem ni : items) {

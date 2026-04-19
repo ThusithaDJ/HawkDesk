@@ -84,6 +84,11 @@ public class Regist extends javax.swing.JFrame {
         jLabel4.setText("Serial Number");
 
         txtCompanyName.setFont(new java.awt.Font("Tahoma", 0, 14)); // NOI18N
+        txtCompanyName.addFocusListener(new java.awt.event.FocusAdapter() {
+            public void focusGained(java.awt.event.FocusEvent evt) {
+                txtCompanyNameFocusGained(evt);
+            }
+        });
 
         txtAddress.setFont(new java.awt.Font("Tahoma", 0, 14)); // NOI18N
 
@@ -175,6 +180,10 @@ public class Regist extends javax.swing.JFrame {
 
         pack();
     }// </editor-fold>//GEN-END:initComponents
+
+    private void txtCompanyNameFocusGained(java.awt.event.FocusEvent evt) {//GEN-FIRST:event_txtCompanyNameFocusGained
+        // TODO add your handling code here:
+    }//GEN-LAST:event_txtCompanyNameFocusGained
 
     /**
      * @param args the command line arguments

@@ -19,8 +19,9 @@ public record GrnDto(
             double costPrice,
             double sellingPrice,
             int stockBefore,
-            String variantSku,  // empty/null = no named variant; non-empty = find or create item_variant
-            String batchName,   // batch number / label; auto-generated B{YYYY}-{NNN} if blank
-            java.util.Date expiryDate   // optional expiry date for the batch
+            String variantSku,        // empty/null = no named variant; non-empty = find or create item_variant
+            String batchName,         // batch number / label; auto-generated if blank
+            java.util.Date expiryDate, // optional expiry date for the batch
+            Integer existingStockId   // null = create new batch; non-null = add qty to this existing stock record
     ) {}
 }

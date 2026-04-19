@@ -1,0 +1,170 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="ded8fcb4-700e-49c8-88b8-cda4014df2fe" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.claude/settings.local.json" beforeDir="false" afterPath="$PROJECT_DIR$/.claude/settings.local.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/aws.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/jpa-buddy.xml" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/HawkDeskPOS.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/HawkDeskPOS.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Grn.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Grn.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Grninfo.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Grninfo.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Invoice.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Invoice.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Invoiceinfo.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Invoiceinfo.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Item.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Item.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Return.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Return.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Stock.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/Stock.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/StockAdjustment.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/StockAdjustment.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/GrnDto.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/GrnDto.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/InvoiceDto.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/InvoiceDto.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/ItemDto.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/ItemDto.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/ReturnDto.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/ReturnDto.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/SaleLineDto.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/SaleLineDto.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/StockBatchDto.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/StockBatchDto.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/StockLevelDto.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/dto/StockLevelDto.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/DashboardPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/DashboardPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Home.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Home.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/LoginPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/LoginPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Regist.form" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Regist.form" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Regist.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Regist.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/admin/SettingsPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/admin/SettingsPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/components/NavBar.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/components/NavBar.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/components/SearchDropdown.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/components/SearchDropdown.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/finance/GrnHistoryPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/finance/GrnHistoryPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/reports/ReportsPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/reports/ReportsPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/FindInvoicePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/FindInvoicePanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/GoodsReturnPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/GoodsReturnPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/Invoice.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/Invoice.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/NewSalePanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/NewSalePanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/ReturnsPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/ReturnsPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/SalesHistoryPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/SalesHistoryPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/ViewSales.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/ViewSales.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/AddItemPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/AddItemPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/AddStock.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/AddStock.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/EditItemPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/EditItemPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/LowStockPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/LowStockPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/ReceiveStockPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/ReceiveStockPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/StockAdjustmentPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/StockAdjustmentPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/ViewStockPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/stock/ViewStockPanel.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/AuthService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/AuthService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/BatchService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/BatchService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ItemService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ItemService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReportService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReportService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReturnService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReturnService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/SaleService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/SaleService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/SettingsService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/SettingsService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/StockService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/StockService.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/resources/hibernate.cfg.xml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/hibernate.cfg.xml" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="CopilotPersistence">
+    <persistenceIdMap>
+      <entry key="_D:/Dev/Workspaces/NetBeans/Products/HawkDesk/HawkDeskPOS" value="3CadOKB60MDUScDQqNMZ7MobDdc" />
+    </persistenceIdMap>
+  </component>
+  <component name="CopilotUserSelectedChatMode">
+    <option name="chatModeId" value="Agent" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="MavenImportPreferences">
+    <option name="generalSettings">
+      <MavenGeneralSettings>
+        <option name="mavenHomeTypeForPersistence" value="WRAPPER" />
+      </MavenGeneralSettings>
+    </option>
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 5
+}</component>
+  <component name="ProjectId" id="3CadOKB60MDUScDQqNMZ7MobDdc" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "Application.DashboardPreview.executor": "Run",
+    "Application.HawkDeskPOS.executor": "Debug",
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.typescript.service.memoryLimit.init": "true",
+    "codeWithMe.voiceChat.enabledByDefault": "false",
+    "git-widget-placeholder": "claude/confident-blackburn",
+    "kotlin-language-version-configured": "true",
+    "node.js.detected.package.eslint": "true",
+    "node.js.detected.package.tslint": "true",
+    "node.js.selected.package.eslint": "(autodetect)",
+    "node.js.selected.package.tslint": "(autodetect)",
+    "nodejs_package_manager_path": "npm",
+    "settings.editor.selected.configurable": "preferences.pluginManager"
+  }
+}]]></component>
+  <component name="RunManager" selected="Application.HawkDeskPOS">
+    <configuration name="DashboardPreview" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.olympus.system.hawkdeskpos.frontend.DashboardPreview" />
+      <module name="HawkDeskPOS" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.olympus.system.hawkdeskpos.frontend.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="HawkDeskPOS" type="Application" factoryName="Application" temporary="true" nameIsGenerated="true">
+      <option name="MAIN_CLASS_NAME" value="com.olympus.system.hawkdeskpos.HawkDeskPOS" />
+      <module name="HawkDeskPOS" />
+      <extension name="coverage">
+        <pattern>
+          <option name="PATTERN" value="com.olympus.system.hawkdeskpos.*" />
+          <option name="ENABLED" value="true" />
+        </pattern>
+      </extension>
+      <method v="2">
+        <option name="Make" enabled="true" />
+      </method>
+    </configuration>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Application.HawkDeskPOS" />
+        <item itemvalue="Application.DashboardPreview" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="ded8fcb4-700e-49c8-88b8-cda4014df2fe" name="Changes" comment="" />
+      <created>1776627584091</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1776627584091</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="TypeScriptGeneratedFilesManager">
+    <option name="version" value="3" />
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
+  </component>
+</project>

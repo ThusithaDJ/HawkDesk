@@ -9,6 +9,7 @@ import com.olympus.system.hawkdeskpos.frontend.components.StatusPill;
 import com.olympus.system.hawkdeskpos.service.CategoryService;
 import com.olympus.system.hawkdeskpos.service.ItemService;
 import com.olympus.system.hawkdeskpos.service.StockService;
+import com.olympus.system.hawkdeskpos.session.SessionContext;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -311,8 +312,8 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         for (StockLevelDto d : items) {
             tableModel.addRow(new Object[]{
                     d.itemName(), d.sku(), d.categoryName(), d.brandName(),
-                    d.totalQty(), d.stockStatus(),
-                    String.format("%.2f", d.sellingPrice()), "Edit"
+                    fmtQty(d.totalQty()), d.stockStatus(),
+                    String.format("%,.2f", d.sellingPrice()), "Edit"
             });
         }
     }
@@ -324,13 +325,19 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
             String expiry = d.expiryDate() != null ? sdf.format(d.expiryDate()) : "—";
             tableModel.addRow(new Object[]{
                     d.itemName(), d.displaySku(), d.batch(),
-                    d.qty(),
-                    String.format("%.2f", d.costPrice()),
-                    String.format("%.2f", d.sellingPrice()),
+                    fmtQty(d.qty()),
+                    String.format("%,.2f", d.costPrice()),
+                    String.format("%,.2f", d.sellingPrice()),
                     expiry,
                     d.stockStatus()
             });
         }
+    }
+
+    private static String fmtQty(double q) {
+        return q == Math.floor(q)
+            ? String.format("%,d", (long) q)
+            : String.format("%,.4f", q).replaceAll("0+$", "").replaceAll("\\.$", "");
     }
 
     private void updateStats() {
@@ -339,7 +346,7 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
         outOfStock.setText(String.valueOf(allItems.stream().filter(d -> "OUT".equals(d.stockStatus())).count()));
         lowStock.setText(String.valueOf(allItems.stream().filter(d -> "LOW".equals(d.stockStatus())).count()));
         double total = allItems.stream().mapToDouble(StockLevelDto::stockValue).sum();
-        totalValue.setText(String.format("Rs. %.2f", total));
+        totalValue.setText(String.format("Rs. %,.2f", total));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -374,44 +381,175 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
     // ── Double-click dialog ───────────────────────────────────────────────────
 
     private void showRowActionDialog(int modelRow) {
-        String itemName;
         if (showBatchView) {
             if (allBatches == null || modelRow >= allBatches.size()) return;
-            itemName = allBatches.get(modelRow).itemName()
-                    + (allBatches.get(modelRow).batch().isBlank() ? "" : " [" + allBatches.get(modelRow).batch() + "]");
-        } else {
-            if (allItems == null || modelRow >= allItems.size()) return;
-            itemName = allItems.get(modelRow).itemName();
-        }
-
-        String[] options = {"Purchase", "Edit Item", "Add Stock"};
-        int choice = JOptionPane.showOptionDialog(
-                this,
-                "What would you like to do with:\n" + itemName,
-                "Select Action",
-                JOptionPane.DEFAULT_OPTION,
-                JOptionPane.QUESTION_MESSAGE,
-                null, options, options[0]);
-
-        if (choice < 0) return;
-
-        if (showBatchView) {
             StockBatchDto batch = allBatches.get(modelRow);
+            String label = batch.itemName()
+                    + (batch.batch().isBlank() ? "" : " [" + batch.batch() + "]");
+            String[] options = {"Purchase", "Edit Item", "Add Stock"};
+            int choice = JOptionPane.showOptionDialog(this,
+                    "What would you like to do with:\n" + label,
+                    "Select Action", JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+            if (choice < 0) return;
             ItemDto item = itemDtoFromBatch(batch);
             switch (choice) {
                 case 0 -> Home.navigateToNewSaleWithItem(item);
                 case 1 -> Home.navigateToEditItem(batch.itemId());
                 case 2 -> Home.navigateToReceiveStockWithItem(item);
             }
-        } else {
-            StockLevelDto level = allItems.get(modelRow);
+            return;
+        }
+
+        // ── Item view ─────────────────────────────────────────────────────────
+        if (allItems == null || modelRow >= allItems.size()) return;
+        StockLevelDto level = allItems.get(modelRow);
+
+        if (!isAdminUser()) {
+            // Non-admin: standard 3-option dialog
+            String[] options = {"Purchase", "Edit Item", "Add Stock"};
+            int choice = JOptionPane.showOptionDialog(this,
+                    "What would you like to do with:\n" + level.itemName(),
+                    "Select Action", JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+            if (choice < 0) return;
             ItemDto item = itemDtoFromLevel(level);
             switch (choice) {
                 case 0 -> Home.navigateToNewSaleWithItem(item);
                 case 1 -> Home.navigateToEditItem(level.itemId());
                 case 2 -> Home.navigateToReceiveStockWithItem(item);
             }
+            return;
         }
+
+        // ── Admin: async-check for extra options, then show dialog ────────────
+        new SwingWorker<boolean[], Void>() {
+            @Override protected boolean[] doInBackground() {
+                boolean canDel      = itemService.canDeleteItem(level.itemId());
+                boolean hasOpening  = findOpeningBatch(level.itemId()) != null;
+                return new boolean[]{canDel, hasOpening};
+            }
+            @Override protected void done() {
+                try {
+                    boolean[] flags = get();
+                    boolean canDel     = flags[0];
+                    boolean hasOpening = flags[1];
+
+                    java.util.List<String> opts = new java.util.ArrayList<>(
+                            java.util.List.of("Purchase", "Edit Item", "Add Stock"));
+                    if (hasOpening) opts.add("Edit Opening Stock");
+                    if (canDel)     opts.add("Delete Item");
+
+                    String[] options = opts.toArray(new String[0]);
+                    int choice = JOptionPane.showOptionDialog(ViewStockPanel.this,
+                            "What would you like to do with:\n" + level.itemName(),
+                            "Select Action", JOptionPane.DEFAULT_OPTION,
+                            JOptionPane.QUESTION_MESSAGE, null, options, options[0]);
+                    if (choice < 0) return;
+
+                    ItemDto item = itemDtoFromLevel(level);
+                    String chosen = options[choice];
+                    switch (chosen) {
+                        case "Purchase"           -> Home.navigateToNewSaleWithItem(item);
+                        case "Edit Item"          -> Home.navigateToEditItem(level.itemId());
+                        case "Add Stock"          -> Home.navigateToReceiveStockWithItem(item);
+                        case "Edit Opening Stock" -> showEditOpeningStockDialog(level);
+                        case "Delete Item"        -> showDeleteItemDialog(level);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }.execute();
+    }
+
+    // ── Admin: Edit Opening Stock dialog ──────────────────────────────────────
+
+    private void showEditOpeningStockDialog(StockLevelDto level) {
+        StockBatchDto ob = findOpeningBatch(level.itemId());
+        if (ob == null) {
+            JOptionPane.showMessageDialog(this, "No opening stock batch found.",
+                    "Not Found", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        JSpinner qtySpinner = new JSpinner(new SpinnerNumberModel(
+                ob.qty(), 0.0, 999999.0, 1.0));
+        qtySpinner.setEditor(new JSpinner.NumberEditor(qtySpinner, "#.###"));
+
+        JTextField costField  = new JTextField(String.valueOf(ob.costPrice()));
+        JTextField priceField = new JTextField(String.valueOf(ob.sellingPrice()));
+
+        JPanel form = new JPanel(new GridLayout(3, 2, 8, 8));
+        form.add(new JLabel("Quantity:"));      form.add(qtySpinner);
+        form.add(new JLabel("Cost Price (Rs.):"));   form.add(costField);
+        form.add(new JLabel("Selling Price (Rs.):")); form.add(priceField);
+
+        int res = JOptionPane.showConfirmDialog(this, form,
+                "Edit Opening Stock — " + level.itemName(),
+                JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
+        if (res != JOptionPane.OK_OPTION) return;
+
+        double qty, cost, price;
+        try {
+            qty   = ((Number) qtySpinner.getValue()).doubleValue();
+            cost  = Double.parseDouble(costField.getText().trim());
+            price = Double.parseDouble(priceField.getText().trim());
+        } catch (NumberFormatException ex) {
+            JOptionPane.showMessageDialog(this, "Invalid numeric value.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        final double fQty = qty, fCost = cost, fPrice = price;
+        Long empId = SessionContext.current() != null ? SessionContext.current().getEmployee().id() : null;
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() {
+                stockService.updateStockBatch(ob.stockId(), fQty, fCost, fPrice, empId);
+                return null;
+            }
+            @Override protected void done() {
+                JOptionPane.showMessageDialog(ViewStockPanel.this,
+                        "Opening stock updated.", "Saved", JOptionPane.INFORMATION_MESSAGE);
+                loadDataAsync();
+            }
+        }.execute();
+    }
+
+    // ── Admin: Delete Item dialog ─────────────────────────────────────────────
+
+    private void showDeleteItemDialog(StockLevelDto level) {
+        int confirm = JOptionPane.showConfirmDialog(this,
+                "<html>Permanently delete <b>" + level.itemName() + "</b>?<br>" +
+                "This cannot be undone. All stock records for this item will also be removed.</html>",
+                "Delete Item", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (confirm != JOptionPane.YES_OPTION) return;
+
+        Long empId = SessionContext.current() != null ? SessionContext.current().getEmployee().id() : null;
+        new SwingWorker<Void, Void>() {
+            @Override protected Void doInBackground() {
+                itemService.deleteItemPermanently(level.itemId(), empId);
+                return null;
+            }
+            @Override protected void done() {
+                JOptionPane.showMessageDialog(ViewStockPanel.this,
+                        level.itemName() + " has been deleted.", "Deleted", JOptionPane.INFORMATION_MESSAGE);
+                loadDataAsync();
+            }
+        }.execute();
+    }
+
+    // ── Admin helpers ─────────────────────────────────────────────────────────
+
+    private boolean isAdminUser() {
+        if (SessionContext.current() == null) return false;
+        String role = SessionContext.current().getEmployee().role();
+        return "OWNER".equals(role) || "ADMIN".equals(role);
+    }
+
+    /** Finds the OPENING batch for the given item from the already-loaded allBatches list. */
+    private StockBatchDto findOpeningBatch(int itemId) {
+        if (allBatches == null) return null;
+        return allBatches.stream()
+                .filter(b -> b.itemId() == itemId && "OPENING".equals(b.batch()))
+                .findFirst().orElse(null);
     }
 
     private ItemDto itemDtoFromLevel(StockLevelDto d) {
@@ -420,7 +558,7 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
                 "", d.stat(),
                 d.totalQty(), d.minLevel(), d.maxLevel(),
                 d.costPrice(), d.sellingPrice(),
-                0, "");
+                0, "", null, 1.0, 0);
     }
 
     private ItemDto itemDtoFromBatch(StockBatchDto d) {
@@ -429,7 +567,7 @@ public class ViewStockPanel extends JPanel implements com.olympus.system.hawkdes
                 d.stat(),
                 d.qty(), d.minLevel(), 0,
                 d.costPrice(), d.sellingPrice(),
-                d.stockId(), d.batch());
+                d.stockId(), d.batch(), null, 1.0, 0);
     }
 
     // ── Actions cell renderer ─────────────────────────────────────────────────

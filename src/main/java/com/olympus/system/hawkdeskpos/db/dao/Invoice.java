@@ -40,11 +40,14 @@ public class Invoice implements Serializable {
     @Column(name = "date_time")
     private Date dateTime;
 
-    @Column(name = "qty")
-    private Integer qty;
+    @Column(name = "qty", columnDefinition = "DECIMAL")
+    private Double qty;
 
-    @Column(name = "sub_total")
+    @Column(name = "sub_total", columnDefinition = "DECIMAL")
     private Double subTotal;
+
+    @Column(name = "cost_price", columnDefinition = "DECIMAL")
+    private Double costPrice;
 
     public Invoice() {}
 
@@ -64,8 +67,10 @@ public class Invoice implements Serializable {
     public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public Date getDateTime() { return dateTime; }
     public void setDateTime(Date dateTime) { this.dateTime = dateTime; }
-    public Integer getQty() { return qty; }
-    public void setQty(Integer qty) { this.qty = qty; }
+    public Double getQty() { return qty; }
+    public void setQty(Double qty) { this.qty = qty; }
     public Double getSubTotal() { return subTotal; }
     public void setSubTotal(Double subTotal) { this.subTotal = subTotal; }
+    public Double getCostPrice() { return costPrice; }
+    public void setCostPrice(Double costPrice) { this.costPrice = costPrice; }
 }

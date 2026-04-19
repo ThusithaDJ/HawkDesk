@@ -21,8 +21,8 @@ public class Return implements Serializable {
     @JoinColumn(name = "employee_id")
     private Employee employee;
 
-    @Column(name = "qty")
-    private Integer qty;
+    @Column(name = "qty", columnDefinition = "DECIMAL")
+    private Double qty;
 
     @Column(name = "reason", length = 128)
     private String reason;
@@ -48,6 +48,19 @@ public class Return implements Serializable {
     @Column(name = "return_date")
     private Date returnDate;
 
+    @Column(name = "resolve_action", length = 45)
+    private String resolveAction;
+
+    @Column(name = "linked_grn_no")
+    private Integer linkedGrnNo;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "customer_id")
+    private Customer customer;
+
+    @Column(name = "resolved_invoice_no", length = 20)
+    private String resolvedInvoiceNo;
+
     public Return() {}
 
     public Integer getReturnId()                    { return returnId; }
@@ -56,8 +69,8 @@ public class Return implements Serializable {
     public void    setInvoiceinfo(Invoiceinfo ii)   { this.invoiceinfo = ii; }
     public Employee getEmployee()                   { return employee; }
     public void    setEmployee(Employee employee)   { this.employee = employee; }
-    public Integer getQty()                         { return qty; }
-    public void    setQty(Integer qty)              { this.qty = qty; }
+    public Double  getQty()                         { return qty; }
+    public void    setQty(Double qty)               { this.qty = qty; }
     public String  getReason()                      { return reason; }
     public void    setReason(String reason)         { this.reason = reason; }
     public String  getReturnTo()                    { return returnTo; }
@@ -72,4 +85,12 @@ public class Return implements Serializable {
     public void    setItemName(String itemName)     { this.itemName = itemName; }
     public Date    getReturnDate()                  { return returnDate; }
     public void    setReturnDate(Date returnDate)   { this.returnDate = returnDate; }
+    public String  getResolveAction()                    { return resolveAction; }
+    public void    setResolveAction(String resolveAction){ this.resolveAction = resolveAction; }
+    public Integer getLinkedGrnNo()                      { return linkedGrnNo; }
+    public void    setLinkedGrnNo(Integer linkedGrnNo)   { this.linkedGrnNo = linkedGrnNo; }
+    public Customer getCustomer()                        { return customer; }
+    public void    setCustomer(Customer customer)        { this.customer = customer; }
+    public String  getResolvedInvoiceNo()                { return resolvedInvoiceNo; }
+    public void    setResolvedInvoiceNo(String no)       { this.resolvedInvoiceNo = no; }
 }

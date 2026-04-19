@@ -32,10 +32,10 @@ public class Grn implements Serializable {
     @Column(name = "item_qty")
     private Integer itemQty;
 
-    @Column(name = "item_cost")
+    @Column(name = "item_cost", columnDefinition = "DECIMAL")
     private Double itemCost;
 
-    @Column(name = "item_price")
+    @Column(name = "item_price", columnDefinition = "DECIMAL")
     private Double itemPrice;
 
     public Grn() {}

@@ -2,7 +2,15 @@
   "permissions": {
     "allow": [
       "Bash(ls:*)",
-      "Bash(find /d/Dev/Workspaces/NetBeans/Products/HawkDesk/HawkDeskPOS -maxdepth 2 -type d ! -path */target* ! -path */.git* ! -path */.idea* ! -path */.mvn*)"
+      "Bash(find /d/Dev/Workspaces/NetBeans/Products/HawkDesk/HawkDeskPOS -maxdepth 2 -type d ! -path */target* ! -path */.git* ! -path */.idea* ! -path */.mvn*)",
+      "Bash(mvn compile:*)",
+      "Bash(mvn clean:*)",
+      "mcp__serena__find_file",
+      "mcp__serena__search_for_pattern",
+      "mcp__serena__get_symbols_overview",
+      "Bash(xargs grep *)",
+      "Bash(total)",
+      "Bash(grep -rn \"\\\\\"total\\\\\"\\\\|`total`\\\\|SUM\\(total\\)\\\\| total[^_A-Za-z]\" src/main/java --include=\"*.java\")"
     ]
   }
 }

@@ -119,7 +119,7 @@ public class LowStockPanel extends JPanel implements com.olympus.system.hawkdesk
                     selected.add(new ItemDto(d.itemId(), d.itemName(), d.sku(),
                             d.categoryName(), d.brandName(), "", d.stat(),
                             d.totalQty(), d.minLevel(), d.maxLevel(),
-                            d.costPrice(), d.sellingPrice(), 0, ""));
+                            d.costPrice(), d.sellingPrice(), 0, "", null, 1.0, 0));
                 }
             }
             if (selected.isEmpty()) {
@@ -221,11 +221,14 @@ public class LowStockPanel extends JPanel implements com.olympus.system.hawkdesk
         JLabel name = new JLabel(d.itemName());
         name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
 
-        JLabel stock = new JLabel(d.totalQty() + " / " + d.minLevel() + " min");
+        String qtyStr = d.totalQty() == Math.floor(d.totalQty())
+                ? String.valueOf((long) d.totalQty())
+                : String.format("%.4f", d.totalQty()).replaceAll("0+$", "").replaceAll("\\.$", "");
+        JLabel stock = new JLabel(qtyStr + " / " + d.minLevel() + " min");
         stock.setForeground(TEXT2);
 
         // Suggested order: 3× min level - current qty, at least 1
-        int suggested = Math.max(1, d.minLevel() * 3 - d.totalQty());
+        int suggested = (int) Math.max(1.0, d.minLevel() * 3.0 - d.totalQty());
         JSpinner spinner = new JSpinner(new SpinnerNumberModel(suggested, 1, 99999, 1));
         orderSpinners.add(spinner);
 

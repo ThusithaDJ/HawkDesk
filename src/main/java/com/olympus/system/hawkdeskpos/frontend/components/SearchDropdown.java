@@ -33,12 +33,19 @@ public class SearchDropdown extends JPanel {
     private final JList<ItemDto>                resultList;
     private final Function<String, List<ItemDto>> searcher;
     private final Consumer<ItemDto>             onSelect;
+    private final boolean                       showPricing;
     private Timer debounce;
 
     public SearchDropdown(Function<String, List<ItemDto>> searcher, Consumer<ItemDto> onSelect) {
+        this(searcher, onSelect, true);
+    }
+
+    public SearchDropdown(Function<String, List<ItemDto>> searcher, Consumer<ItemDto> onSelect,
+                          boolean showPricing) {
         super(new BorderLayout());
-        this.searcher = searcher;
-        this.onSelect = onSelect;
+        this.searcher    = searcher;
+        this.onSelect    = onSelect;
+        this.showPricing = showPricing;
 
         searchField = new JTextField();
         searchField.setFont(searchField.getFont().deriveFont(14f));
@@ -51,7 +58,7 @@ public class SearchDropdown extends JPanel {
         // Drop-down list
         model      = new DefaultListModel<>();
         resultList = new JList<>(model);
-        resultList.setCellRenderer(new ItemCellRenderer());
+        resultList.setCellRenderer(new ItemCellRenderer(showPricing));
         resultList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         resultList.setBackground(BG);
 
@@ -163,6 +170,9 @@ public class SearchDropdown extends JPanel {
     // ── Custom cell renderer ──────────────────────────────────────────────────
 
     private static class ItemCellRenderer implements ListCellRenderer<ItemDto> {
+        private final boolean showPricing;
+        ItemCellRenderer(boolean showPricing) { this.showPricing = showPricing; }
+
         @Override
         public Component getListCellRendererComponent(JList<? extends ItemDto> list,
                 ItemDto item, int index, boolean isSelected, boolean cellHasFocus) {
@@ -183,23 +193,43 @@ public class SearchDropdown extends JPanel {
             left.add(sub);
             row.add(left, BorderLayout.CENTER);
 
-            // Right: status pill + sell price + cost price
-            JPanel right = new JPanel(new GridLayout(3, 1, 0, 1));
-            right.setOpaque(false);
-            StatusPill pill = StatusPill.forStatus(item.stockStatus());
-            pill.setHorizontalAlignment(SwingConstants.RIGHT);
-            JLabel price = new JLabel(String.format("Rs. %.2f", item.sellingPrice()));
-            price.setFont(price.getFont().deriveFont(Font.BOLD, 12f));
-            price.setForeground(NAVY);
-            price.setHorizontalAlignment(SwingConstants.RIGHT);
-            JLabel cost = new JLabel(String.format("Cost: Rs. %.2f", item.costPrice()));
-            cost.setFont(cost.getFont().deriveFont(10f));
-            cost.setForeground(TEXT2);
-            cost.setHorizontalAlignment(SwingConstants.RIGHT);
-            right.add(pill);
-            right.add(price);
-            right.add(cost);
-            row.add(right, BorderLayout.EAST);
+            if (showPricing) {
+                // Right: status pill + sell price + cost price
+                JPanel right = new JPanel(new GridLayout(3, 1, 0, 1));
+                right.setOpaque(false);
+                StatusPill pill = StatusPill.forStatus(item.stockStatus());
+                pill.setHorizontalAlignment(SwingConstants.RIGHT);
+                JLabel price = new JLabel(String.format("Rs. %.2f", item.sellingPrice()));
+                price.setFont(price.getFont().deriveFont(Font.BOLD, 12f));
+                price.setForeground(NAVY);
+                price.setHorizontalAlignment(SwingConstants.RIGHT);
+                JLabel cost = new JLabel(String.format("Cost: Rs. %.2f", item.costPrice()));
+                cost.setFont(cost.getFont().deriveFont(10f));
+                cost.setForeground(TEXT2);
+                cost.setHorizontalAlignment(SwingConstants.RIGHT);
+                right.add(pill);
+                right.add(price);
+                right.add(cost);
+                row.add(right, BorderLayout.EAST);
+            } else {
+                // Right: status pill + total qty + batch count (GRN mode)
+                JPanel right = new JPanel(new GridLayout(3, 1, 0, 1));
+                right.setOpaque(false);
+                StatusPill pill = StatusPill.forStatus(item.stockStatus());
+                pill.setHorizontalAlignment(SwingConstants.RIGHT);
+                JLabel qtyLbl = new JLabel(String.format("Qty: %.0f", item.currentQty()));
+                qtyLbl.setFont(qtyLbl.getFont().deriveFont(Font.BOLD, 12f));
+                qtyLbl.setForeground(NAVY);
+                qtyLbl.setHorizontalAlignment(SwingConstants.RIGHT);
+                JLabel batchLbl = new JLabel(item.batchCount() + " batch(es)");
+                batchLbl.setFont(batchLbl.getFont().deriveFont(10f));
+                batchLbl.setForeground(TEXT2);
+                batchLbl.setHorizontalAlignment(SwingConstants.RIGHT);
+                right.add(pill);
+                right.add(qtyLbl);
+                right.add(batchLbl);
+                row.add(right, BorderLayout.EAST);
+            }
 
             return row;
         }

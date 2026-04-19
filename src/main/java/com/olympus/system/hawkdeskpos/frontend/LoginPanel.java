@@ -4,6 +4,7 @@ import com.olympus.system.hawkdeskpos.db.dao.AuditLog;
 import com.olympus.system.hawkdeskpos.dto.EmployeeDto;
 import com.olympus.system.hawkdeskpos.service.AuditService;
 import com.olympus.system.hawkdeskpos.service.AuthService;
+import com.olympus.system.hawkdeskpos.service.SettingsService;
 import com.olympus.system.hawkdeskpos.session.SessionContext;
 
 import javax.swing.*;
@@ -29,9 +30,10 @@ public class LoginPanel extends JPanel {
     private static final Color SUCCESS = new Color(0x4C, 0xAF, 0x50);
     private static final Color DANGER  = new Color(0xEF, 0x9A, 0x9A);
 
-    private final AuthService   authService;
-    private final AuditService  auditService;
-    private final Runnable      onSuccess;
+    private final AuthService    authService;
+    private final AuditService   auditService;
+    private final Runnable       onSuccess;
+    private final SettingsService settingsService;
 
     private EmployeeDto selectedEmployee;
     private final StringBuilder pin = new StringBuilder();
@@ -55,10 +57,12 @@ public class LoginPanel extends JPanel {
 
     private Timer lockoutTimer;
 
-    public LoginPanel(AuthService authService, AuditService auditService, Runnable onSuccess) {
-        this.authService  = authService;
-        this.auditService = auditService;
-        this.onSuccess    = onSuccess;
+    public LoginPanel(AuthService authService, AuditService auditService,
+                      Runnable onSuccess, SettingsService settingsService) {
+        this.authService    = authService;
+        this.auditService   = auditService;
+        this.onSuccess      = onSuccess;
+        this.settingsService = settingsService;
         setLayout(new BorderLayout());
         setBackground(NAVY);
         buildUI();
@@ -132,10 +136,31 @@ public class LoginPanel extends JPanel {
         bottom.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(255,255,255,20)),
                 new EmptyBorder(12, 28, 14, 28)));
+        JPanel leftBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        leftBtns.setOpaque(false);
+
+        JButton minimizeBtn = new JButton("—");
+        minimizeBtn.setForeground(WHITE);
+        minimizeBtn.setBackground(new Color(255, 255, 255, 0));
+        minimizeBtn.setOpaque(false);
+        minimizeBtn.setBorderPainted(false);
+        minimizeBtn.setFocusPainted(false);
+        minimizeBtn.setFont(minimizeBtn.getFont().deriveFont(14f));
+        minimizeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        minimizeBtn.setToolTipText("Minimize");
+        minimizeBtn.addActionListener(e -> {
+            java.awt.Window w = SwingUtilities.getWindowAncestor(this);
+            if (w instanceof javax.swing.JFrame f) f.setExtendedState(javax.swing.JFrame.ICONIFIED);
+        });
+        minimizeBtn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseEntered(java.awt.event.MouseEvent e) { minimizeBtn.setForeground(new Color(0xFF, 0xCC, 0x00)); }
+            @Override public void mouseExited(java.awt.event.MouseEvent e)  { minimizeBtn.setForeground(WHITE); }
+        });
+
         JButton exitBtn = new JButton("Exit");
         exitBtn.setForeground(WHITE);
         exitBtn.setBackground(new Color(255, 255, 255, 0));
-        exitBtn.setOpaque(true);
+        exitBtn.setOpaque(false);
         exitBtn.setBorderPainted(false);
         exitBtn.setFocusPainted(false);
         exitBtn.setFont(exitBtn.getFont().deriveFont(12f));
@@ -145,7 +170,28 @@ public class LoginPanel extends JPanel {
             @Override public void mouseEntered(java.awt.event.MouseEvent e) { exitBtn.setForeground(new Color(0xFC, 0x8C, 0x8C)); }
             @Override public void mouseExited(java.awt.event.MouseEvent e)  { exitBtn.setForeground(WHITE); }
         });
-        bottom.add(exitBtn, BorderLayout.WEST);
+
+        leftBtns.add(minimizeBtn);
+        leftBtns.add(exitBtn);
+        bottom.add(leftBtns, BorderLayout.WEST);
+
+        // Trial status (centre of bottom bar)
+        if (settingsService != null) {
+            long remaining = settingsService.trialDaysRemaining();
+            String trialText;
+            Color  trialColor;
+            if (remaining <= 3) {
+                trialText  = "⚠  Trial expires in " + remaining + " day" + (remaining == 1 ? "" : "s");
+                trialColor = new Color(0xFF, 0xCC, 0x00);  // amber
+            } else {
+                trialText  = "Trial: " + remaining + " day" + (remaining == 1 ? "" : "s") + " remaining";
+                trialColor = new Color(255, 255, 255, 120);
+            }
+            JLabel trialLabel = label(trialText, 12, Font.PLAIN, trialColor);
+            trialLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            bottom.add(trialLabel, BorderLayout.CENTER);
+        }
+
         JLabel copy = label("© 2026 Olympus Systems", 12, Font.PLAIN, new Color(255,255,255,89));
         bottom.add(copy, BorderLayout.EAST);
         add(bottom, BorderLayout.SOUTH);

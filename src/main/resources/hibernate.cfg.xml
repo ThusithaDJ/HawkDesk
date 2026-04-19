@@ -41,6 +41,13 @@
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.UserPermissions"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.StockAdjustment"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.AuditLog"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Customer"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.UomPreset"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.InvoiceHistory"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.CashAccount"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Income"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.Expense"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.CashTransaction"/>
 
     </session-factory>
 </hibernate-configuration>

@@ -7,11 +7,17 @@ import java.util.List;
 public record InvoiceDto(
         String invoiceNo,
         Date date,
-        double total,
+        double netTotal,
+        double subTotal,
+        double grossTotal,
+        double tax,
         double paid,
         double discount,
         String paymentMethod,
         String stat,
         String cashierName,
-        List<SaleLineDto> lines
+        List<SaleLineDto> lines,
+        String customerName,
+        Date   creditResolveDate,
+        Date   resolvedDate        // when a CREDIT invoice was last paid (from invoice_history); null otherwise
 ) {}

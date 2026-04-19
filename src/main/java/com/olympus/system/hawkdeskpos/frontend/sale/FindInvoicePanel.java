@@ -1,5 +1,6 @@
 package com.olympus.system.hawkdeskpos.frontend.sale;
 
+import com.olympus.system.hawkdeskpos.db.dao.InvoiceHistory;
 import com.olympus.system.hawkdeskpos.dto.InvoiceDto;
 import com.olympus.system.hawkdeskpos.dto.ReturnDto;
 import com.olympus.system.hawkdeskpos.dto.SaleLineDto;
@@ -71,6 +72,13 @@ public class FindInvoicePanel extends JPanel
     }
 
     @Override public void refresh() { loadRecent(); }
+
+    /** Navigate directly to a specific invoice by number. Called from CustomerPanel. */
+    public void searchForInvoice(String invoiceNo) {
+        if (invoiceNo == null || invoiceNo.isBlank()) return;
+        searchField.setText(invoiceNo.trim());
+        loadRecent();
+    }
 
     // ── UI construction ───────────────────────────────────────────────────────
 
@@ -362,12 +370,13 @@ public class FindInvoicePanel extends JPanel
         totals.setOpaque(false);
         totals.setAlignmentX(Component.LEFT_ALIGNMENT);
         totals.setMaximumSize(new Dimension(Integer.MAX_VALUE, 999));
-        if (inv.discount() > 0)
-            addPair(totals, "Discount", "Rs. " + fmt(inv.discount()));
-        addAmountPair(totals, "TOTAL", "Rs. " + fmt(inv.total()), true);
+        if (inv.subTotal() > 0) addPair(totals, "Subtotal", "Rs. " + fmt(inv.subTotal()));
+        if (inv.tax() > 0) addPair(totals, "Tax", "Rs. " + fmt(inv.tax()));
+        if (inv.discount() > 0) addPair(totals, "Discount", "Rs. " + fmt(inv.discount()));
+        addAmountPair(totals, "TOTAL", "Rs. " + fmt(inv.netTotal()), true);
         if (inv.paid() > 0) {
             addAmountPair(totals, "Paid", "Rs. " + fmt(inv.paid()), false);
-            double change = inv.paid() - inv.total();
+            double change = inv.paid() - inv.netTotal();
             if (change > 0) addAmountPair(totals, "Change", "Rs. " + fmt(change), false);
         }
         detailContent.add(totals);
@@ -384,6 +393,20 @@ public class FindInvoicePanel extends JPanel
         returnsPlaceholder.setFont(returnsPlaceholder.getFont().deriveFont(11f));
         returnsPlaceholder.setAlignmentX(Component.LEFT_ALIGNMENT);
         detailContent.add(returnsPlaceholder);
+        detailContent.add(Box.createVerticalStrut(10));
+
+        // ── Invoice History section ───────────────────────────────────────────
+        detailContent.add(Box.createVerticalStrut(14));
+        detailContent.add(separator());
+        detailContent.add(Box.createVerticalStrut(10));
+        detailContent.add(sectionLabel("INVOICE HISTORY"));
+        detailContent.add(Box.createVerticalStrut(6));
+
+        JLabel histPlaceholder = new JLabel("Loading history…");
+        histPlaceholder.setForeground(TEXT2);
+        histPlaceholder.setFont(histPlaceholder.getFont().deriveFont(11f));
+        histPlaceholder.setAlignmentX(Component.LEFT_ALIGNMENT);
+        detailContent.add(histPlaceholder);
         detailContent.add(Box.createVerticalStrut(10));
 
         // ── Actions ───────────────────────────────────────────────────────────
@@ -408,6 +431,36 @@ public class FindInvoicePanel extends JPanel
 
         detailContent.revalidate();
         detailContent.repaint();
+
+        // Load invoice history asynchronously and replace placeholder
+        new SwingWorker<List<InvoiceHistory>, Void>() {
+            @Override protected List<InvoiceHistory> doInBackground() {
+                return saleService.getInvoiceHistory(inv.invoiceNo());
+            }
+            @Override protected void done() {
+                try {
+                    List<InvoiceHistory> history = get();
+                    int idx = getComponentIndex(detailContent, histPlaceholder);
+                    if (idx >= 0) detailContent.remove(idx);
+                    SimpleDateFormat sf2 = new SimpleDateFormat("dd MMM yyyy HH:mm");
+                    if (history.isEmpty()) {
+                        JLabel none = new JLabel("No history recorded yet.");
+                        none.setForeground(TEXT2);
+                        none.setFont(none.getFont().deriveFont(11f));
+                        none.setAlignmentX(Component.LEFT_ALIGNMENT);
+                        detailContent.add(none, idx < 0 ? detailContent.getComponentCount() : idx);
+                    } else {
+                        int insertAt = idx < 0 ? detailContent.getComponentCount() : idx;
+                        for (int i = history.size() - 1; i >= 0; i--) {
+                            InvoiceHistory h = history.get(i);
+                            detailContent.add(buildHistoryRow(h, sf2), insertAt);
+                        }
+                    }
+                    detailContent.revalidate();
+                    detailContent.repaint();
+                } catch (Exception ignored) {}
+            }
+        }.execute();
 
         // Load returns asynchronously and replace placeholder
         new SwingWorker<List<ReturnDto>, Void>() {
@@ -457,6 +510,40 @@ public class FindInvoicePanel extends JPanel
         line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
         JLabel line2 = new JLabel(r.reason() + "  ·  " + dateStr
                 + "  ·  by " + r.cashierName());
+        line2.setFont(line2.getFont().deriveFont(11f));
+        line2.setForeground(TEXT2);
+
+        row.add(line1);
+        row.add(line2);
+        return row;
+    }
+
+    private JPanel buildHistoryRow(InvoiceHistory h, SimpleDateFormat sf) {
+        JPanel row = new JPanel(new GridLayout(0, 1, 0, 2));
+        row.setOpaque(false);
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+        Color accentColor = switch (h.getEventType()) {
+            case CREATED        -> new Color(0x2E, 0x7D, 0x32);  // green
+            case PAID           -> new Color(0x1E, 0x3A, 0x5F);  // navy
+            case RETURNED,
+                 PARTIAL_RETURN -> new Color(0xC6, 0x28, 0x28);  // red
+            case VOIDED         -> new Color(0x9E, 0x9E, 0x9E);  // grey
+        };
+        row.setBorder(BorderFactory.createCompoundBorder(
+                BorderFactory.createMatteBorder(0, 3, 0, 0, accentColor),
+                new EmptyBorder(4, 8, 4, 4)));
+        row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 999));
+
+        String dateStr = h.getEventDate() != null ? sf.format(h.getEventDate()) : "—";
+        String emp     = h.getEmployee() != null ? h.getEmployee().getName() : "—";
+        String amtStr  = h.getAmount() != null ? "  ·  Rs. " + fmt(h.getAmount()) : "";
+
+        JLabel line1 = new JLabel(h.getEventType().name().replace('_', ' ') + amtStr);
+        line1.setFont(line1.getFont().deriveFont(Font.BOLD, 12f));
+        line1.setForeground(accentColor);
+        JLabel line2 = new JLabel(dateStr + "  ·  by " + emp
+                + (h.getNotes() != null && !h.getNotes().isBlank() ? "  ·  " + h.getNotes() : ""));
         line2.setFont(line2.getFont().deriveFont(11f));
         line2.setForeground(TEXT2);
 
@@ -524,7 +611,7 @@ public class FindInvoicePanel extends JPanel
                     inv.invoiceNo(),
                     inv.date() != null ? DATE_FMT.format(inv.date()) : "—",
                     inv.cashierName() != null ? inv.cashierName() : "—",
-                    fmt(inv.total()),
+                    fmt(inv.netTotal()),
                     inv.paymentMethod(),
                     inv.stat()
             });

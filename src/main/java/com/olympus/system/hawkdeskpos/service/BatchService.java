@@ -23,15 +23,28 @@ public class BatchService {
 
     // ── Batch number generation ───────────────────────────────────────────────
 
-    /** Generates the next batch number: B{YYYY}-{NNN}, e.g. B2025-001. */
+    /**
+     * Generates the next batch number using the default pattern "B{YYYY}-{NNN}".
+     * Delegates to {@link #generateBatchNumber(String)}.
+     */
     public String generateBatchNumber() {
-        String year   = String.valueOf(LocalDate.now().getYear());
-        String prefix = "B" + year + "-";
+        return generateBatchNumber("B{YYYY}-{NNN}");
+    }
+
+    /**
+     * Generates the next batch number using a configurable pattern.
+     * Supported placeholders: {@code {YYYY}} = current year, {@code {NNN}} = zero-padded sequence.
+     * Example: {@code "B{YYYY}-{NNN}"} → {@code "B2026-001"}.
+     */
+    public String generateBatchNumber(String pattern) {
+        String year     = String.valueOf(LocalDate.now().getYear());
+        String resolved = pattern.replace("{YYYY}", year);
+        String prefix   = resolved.replace("{NNN}", "");
         try (var session = sf.openSession()) {
             Long count = session.createQuery(
                     "SELECT COUNT(b) FROM ItemBatch b WHERE b.batchNumber LIKE :p", Long.class)
                     .setParameter("p", prefix + "%").uniqueResult();
-            return prefix + String.format("%03d", (count == null ? 0 : count) + 1);
+            return resolved.replace("{NNN}", String.format("%03d", (count == null ? 0 : count) + 1));
         }
     }
 

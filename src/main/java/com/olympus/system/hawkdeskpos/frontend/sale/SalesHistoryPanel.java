@@ -22,15 +22,19 @@ import java.util.List;
 
 /**
  * Sales History screen.
- * Period selector (Today default) + search + date range + sortable table + detail panel (1/4 width).
+ * 5 stat tiles (Revenue, Transactions, Items Sold, Profit, Returns) — all reflect
+ * the current filter/search state. Detail panel shows item cost.
  */
-public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
+public class SalesHistoryPanel extends JPanel
+        implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
-    private static final Color BG    = new Color(0xF0, 0xF2, 0xF5);
-    private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);
-    private static final Color NAVY  = new Color(0x1E, 0x3A, 0x5F);
-    private static final Color AMBER = new Color(0xB4, 0x5B, 0x00);
+    private static final Color BG       = new Color(0xF0, 0xF2, 0xF5);
+    private static final Color TEXT2    = new Color(0x5A, 0x60, 0x70);
+    private static final Color NAVY     = new Color(0x1E, 0x3A, 0x5F);
+    private static final Color AMBER    = new Color(0xB4, 0x5B, 0x00);
     private static final Color AMBER_BG = new Color(0xFF, 0xF3, 0xCD);
+    private static final Color RED      = new Color(0xC6, 0x28, 0x28);
+    private static final Color GREEN    = new Color(0x2E, 0x7D, 0x32);
 
     private static final String[] PERIODS = {
             "Today", "This Week", "Last Week", "This Month", "Last Month", "This Year", "Custom"
@@ -39,17 +43,19 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
     private final SaleService   saleService;
     private final ReturnService returnService;
 
-    private JLabel todayRevLabel, txCountLabel, weekRevLabel, returnsLabel;
-    private JTextField searchField;
-    private JComboBox<String> paymentFilter;
-    private JComboBox<String> periodCombo;
-    private JPanel  customDatePanel;
-    private JSpinner fromSpinner, toSpinner;
-    private DefaultTableModel tableModel;
-    private JTable table;
-    private List<InvoiceDto> allInvoices;
-    private List<InvoiceDto> displayedInvoices;
-    private JPanel detailContent;  // inner panel inside the right card — rebuilt on each selection
+    // Stat tile labels
+    private JLabel revenueLabel, txLabel, itemsLabel, profitLabel, returnsLabel;
+
+    private JTextField         searchField;
+    private JComboBox<String>  paymentFilter;
+    private JComboBox<String>  periodCombo;
+    private JPanel             customDatePanel;
+    private JSpinner           fromSpinner, toSpinner;
+    private DefaultTableModel  tableModel;
+    private JTable             table;
+    private List<InvoiceDto>   allInvoices;
+    private List<InvoiceDto>   displayedInvoices;
+    private JPanel             detailContent;
 
     private static final String[] COLS = {
             "Invoice #", "Date/Time", "Cashier", "Items", "Payment", "Amount (Rs.)", "Status"
@@ -91,17 +97,14 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         topBar.add(btns, BorderLayout.EAST);
         root.add(topBar, BorderLayout.NORTH);
 
-        // Stat bar
-        JPanel statBar = new JPanel(new GridLayout(1, 4, 10, 0));
+        // ── 5 stat tiles ──────────────────────────────────────────────────────
+        JPanel statBar = new JPanel(new GridLayout(1, 5, 10, 0));
         statBar.setOpaque(false);
-        statBar.add(statCard("Today's Revenue", "—"));
-        todayRevLabel = valueLabel(statBar);
-        statBar.add(statCard("Today's Transactions", "—"));
-        txCountLabel  = valueLabel(statBar);
-        statBar.add(statCard("This Week Revenue", "—"));
-        weekRevLabel  = valueLabel(statBar);
-        statBar.add(statCard("Returns (Total)", "—"));
-        returnsLabel  = valueLabel(statBar);
+        revenueLabel = addTile(statBar, "Revenue",       "Rs. 0.00", "#185FA5");
+        txLabel      = addTile(statBar, "Transactions",  "0",        "#2E7D32");
+        itemsLabel   = addTile(statBar, "Items Sold",    "0",        "#1E3A5F");
+        profitLabel  = addTile(statBar, "Profit",        "Rs. 0.00", "#6A1B9A");
+        returnsLabel = addTile(statBar, "Returns (Total)", "0",      "#C62828");
 
         // Left: filters + table
         JPanel left = new JPanel(new BorderLayout(0, 8));
@@ -135,19 +138,17 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         ((JPanel)tableCard).add(scroll, BorderLayout.CENTER);
         left.add(tableCard, BorderLayout.CENTER);
 
-        // Right: detail panel (placeholder) — will take 1/4 via JSplitPane
+        // Right: detail panel
         detailContent = buildEmptyDetailContent();
         CardPanel rightCard = new CardPanel(new BorderLayout(0, 10));
         ((JPanel)rightCard).setBorder(new EmptyBorder(14, 14, 14, 14));
         ((JPanel)rightCard).add(detailContent, BorderLayout.CENTER);
 
-        // JSplitPane: left 3/4, right 1/4
         JSplitPane split = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, left, rightCard);
         split.setResizeWeight(0.75);
         split.setBorder(null);
         split.setDividerSize(5);
         split.setOpaque(false);
-        // Set proportional location once the panel is shown
         split.addHierarchyListener(e -> {
             if ((e.getChangeFlags() & java.awt.event.HierarchyEvent.SHOWING_CHANGED) != 0
                     && split.isShowing()) {
@@ -164,6 +165,27 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         add(root);
         loadDataAsync();
     }
+
+    // ── Tile helper ───────────────────────────────────────────────────────────
+
+    private JLabel addTile(JPanel parent, String label, String value, String hexColor) {
+        CardPanel c = new CardPanel(new BorderLayout(0, 4));
+        c.setBorder(new EmptyBorder(12, 14, 12, 14));
+        JLabel l = new JLabel(label);
+        l.setFont(l.getFont().deriveFont(12f));
+        l.setForeground(TEXT2);
+        JLabel v = new JLabel(value);
+        v.setFont(v.getFont().deriveFont(Font.BOLD, 18f));
+        try {
+            v.setForeground(Color.decode(hexColor));
+        } catch (NumberFormatException ignored) {}
+        c.add(l, BorderLayout.NORTH);
+        c.add(v, BorderLayout.CENTER);
+        parent.add(c);
+        return v;
+    }
+
+    // ── Filters ───────────────────────────────────────────────────────────────
 
     private JPanel buildFilters() {
         JPanel wrapper = new JPanel(new BorderLayout(0, 6));
@@ -237,26 +259,12 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         Date to   = range[1];
 
         new SwingWorker<List<InvoiceDto>, Void>() {
-            private double todayRev;
-            private int    todayTx;
-            private double weekRev;
-            private long   returns;
-
             @Override protected List<InvoiceDto> doInBackground() {
-                SaleService.TodaySummary s = saleService.getTodaySummary();
-                todayRev = s.revenue();
-                todayTx  = s.transactions();
-                weekRev  = saleService.getWeekRevenue();
-                returns  = saleService.getReturnCount();
                 return saleService.listInvoices(null, from, to, null);
             }
             @Override protected void done() {
                 try {
                     allInvoices = get();
-                    todayRevLabel.setText(String.format("Rs. %,.2f", todayRev));
-                    txCountLabel.setText(String.valueOf(todayTx));
-                    weekRevLabel.setText(String.format("Rs. %,.2f", weekRev));
-                    returnsLabel.setText(String.valueOf(returns));
                     applyFilter();
                 } catch (Exception e) {
                     System.err.println("SalesHistoryPanel.loadDataAsync: " + e.getMessage());
@@ -277,7 +285,37 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
             boolean matchM = "All Methods".equals(method) || method.equals(inv.paymentMethod());
             return matchQ && matchM;
         }).toList();
+
         populateTable(filtered);
+        updateTiles(filtered);
+    }
+
+    /** Compute and display stat tiles from the currently displayed invoice list. */
+    private void updateTiles(List<InvoiceDto> invs) {
+        double revenue   = 0;
+        int    tx        = 0;
+        int    itemsSold = 0;
+        double cogs      = 0;
+        int    returns   = 0;
+
+        for (InvoiceDto inv : invs) {
+            if ("Void".equals(inv.stat())) continue;
+            revenue += inv.netTotal();
+            tx++;
+            for (SaleLineDto line : inv.lines()) {
+                itemsSold += line.qty();
+                cogs += line.costPrice() * line.qty();
+            }
+            String s = inv.stat();
+            if ("Full Return".equals(s) || "Partial Return".equals(s)) returns++;
+        }
+
+        double profit = revenue - cogs;
+        revenueLabel.setText(String.format("Rs. %,.2f", revenue));
+        txLabel     .setText(String.valueOf(tx));
+        itemsLabel  .setText(String.valueOf(itemsSold));
+        profitLabel .setText(String.format("Rs. %,.2f", profit));
+        returnsLabel.setText(String.valueOf(returns));
     }
 
     private void populateTable(List<InvoiceDto> invs) {
@@ -291,7 +329,7 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
                     inv.cashierName() != null ? inv.cashierName() : "—",
                     inv.lines().size(),
                     inv.paymentMethod(),
-                    String.format("%,.2f", inv.total()),
+                    String.format("%,.2f", inv.netTotal()),
                     inv.stat()
             });
         }
@@ -303,18 +341,18 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         String period = (String) periodCombo.getSelectedItem();
         LocalDate today = LocalDate.now();
         return switch (period) {
-            case "Today"      -> new Date[]{ toStartOfDay(today),                          toEndOfDay(today) };
-            case "This Week"  -> new Date[]{ toStartOfDay(today.with(DayOfWeek.MONDAY)),   toEndOfDay(today) };
+            case "Today"      -> new Date[]{ toStartOfDay(today), toEndOfDay(today) };
+            case "This Week"  -> new Date[]{ toStartOfDay(today.with(DayOfWeek.MONDAY)), toEndOfDay(today) };
             case "Last Week"  -> {
                 LocalDate mon = today.minusWeeks(1).with(DayOfWeek.MONDAY);
                 yield new Date[]{ toStartOfDay(mon), toEndOfDay(mon.with(DayOfWeek.SUNDAY)) };
             }
-            case "This Month" -> new Date[]{ toStartOfDay(today.withDayOfMonth(1)),        toEndOfDay(today) };
+            case "This Month" -> new Date[]{ toStartOfDay(today.withDayOfMonth(1)), toEndOfDay(today) };
             case "Last Month" -> {
                 LocalDate first = today.minusMonths(1).withDayOfMonth(1);
                 yield new Date[]{ toStartOfDay(first), toEndOfDay(first.withDayOfMonth(first.lengthOfMonth())) };
             }
-            case "This Year"  -> new Date[]{ toStartOfDay(today.withDayOfYear(1)),         toEndOfDay(today) };
+            case "This Year"  -> new Date[]{ toStartOfDay(today.withDayOfYear(1)), toEndOfDay(today) };
             case "Custom"     -> new Date[]{ (Date) fromSpinner.getValue(), (Date) toSpinner.getValue() };
             default           -> new Date[]{ null, null };
         };
@@ -345,7 +383,6 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
     }
 
     private void showDetail(InvoiceDto inv) {
-        // Find the parent CardPanel (right card) and replace its content
         Container rightCard = detailContent.getParent();
         if (rightCard == null) return;
 
@@ -355,18 +392,15 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         JPanel panel = new JPanel(new BorderLayout(0, 8));
         panel.setOpaque(false);
 
-        // Title
         JLabel title = new JLabel("INVOICE DETAIL");
         title.setFont(title.getFont().deriveFont(Font.BOLD, 11f));
         title.setForeground(TEXT2);
         panel.add(title, BorderLayout.NORTH);
 
-        // Scrollable body
         JPanel body = new JPanel();
         body.setOpaque(false);
         body.setLayout(new BoxLayout(body, BoxLayout.Y_AXIS));
 
-        // Header fields
         SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
         JPanel info = new JPanel(new GridLayout(0, 1, 0, 5));
         info.setOpaque(false);
@@ -374,13 +408,15 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         info.setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
         info.setBorder(new EmptyBorder(0, 0, 10, 0));
         info.add(detailRow("Invoice #", inv.invoiceNo()));
-        info.add(detailRow("Date",  inv.date() != null ? sdf.format(inv.date()) : "—"));
+        info.add(detailRow("Date",    inv.date() != null ? sdf.format(inv.date()) : "—"));
         info.add(detailRow("Cashier", inv.cashierName() != null ? inv.cashierName() : "—"));
+        if (inv.customerName() != null)
+            info.add(detailRow("Customer", inv.customerName()));
         info.add(detailRow("Payment", inv.paymentMethod()));
         info.add(detailRow("Status",  inv.stat()));
         body.add(info);
 
-        // Items section
+        // Items
         JLabel itemsTitle = new JLabel("ITEMS");
         itemsTitle.setFont(itemsTitle.getFont().deriveFont(Font.BOLD, 10f));
         itemsTitle.setForeground(TEXT2);
@@ -388,7 +424,7 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         body.add(itemsTitle);
         body.add(Box.createVerticalStrut(4));
 
-        String[] lineCols = {"Item", "Batch", "Qty", "Price", "Total"};
+        String[] lineCols = {"Item", "UoM", "Qty", "Unit Price", "Unit Cost", "Cost Total", "Sale Total"};
         DefaultTableModel lineModel = new DefaultTableModel(lineCols, 0) {
             @Override public boolean isCellEditable(int r, int c) { return false; }
         };
@@ -399,13 +435,22 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         lineTable.getTableHeader().setFont(lineTable.getFont().deriveFont(Font.BOLD, 10f));
         lineTable.getTableHeader().setBackground(new Color(0xF7, 0xF8, 0xFA));
         lineTable.setFont(lineTable.getFont().deriveFont(11f));
+        // Column widths
+        lineTable.getColumnModel().getColumn(1).setPreferredWidth(40);
+        lineTable.getColumnModel().getColumn(1).setMaxWidth(55);
+        lineTable.getColumnModel().getColumn(2).setPreferredWidth(40);
+        lineTable.getColumnModel().getColumn(2).setMaxWidth(55);
 
         for (SaleLineDto line : inv.lines()) {
+            double lineCost = line.costPrice() * line.qty();
+            String uom = (line.unit() != null && !line.unit().isBlank()) ? line.unit() : "pcs";
             lineModel.addRow(new Object[]{
                     line.itemName(),
-                    line.batch() != null ? line.batch() : "",
+                    uom,
                     line.qty(),
                     String.format("%,.2f", line.unitPrice()),
+                    line.costPrice() > 0 ? String.format("%,.2f", line.costPrice()) : "—",
+                    lineCost > 0 ? String.format("%,.2f", lineCost) : "—",
                     String.format("%,.2f", line.lineTotal())
             });
         }
@@ -425,13 +470,19 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         totals.setOpaque(false);
         totals.setAlignmentX(Component.LEFT_ALIGNMENT);
         totals.setMaximumSize(new Dimension(Integer.MAX_VALUE, 100));
+        if (inv.subTotal() > 0) totals.add(detailRow("Subtotal", "Rs. " + String.format("%,.2f", inv.subTotal())));
+        if (inv.tax() > 0) totals.add(detailRow("Tax", "Rs. " + String.format("%,.2f", inv.tax())));
         if (inv.discount() > 0) totals.add(detailRow("Discount", "Rs. " + String.format("%,.2f", inv.discount())));
-        totals.add(detailRow("Total", "Rs. " + String.format("%,.2f", inv.total())));
+        totals.add(detailRow("Total", "Rs. " + String.format("%,.2f", inv.netTotal())));
         totals.add(detailRow("Paid",  "Rs. " + String.format("%,.2f", inv.paid())));
+        // Profit from this invoice
+        double invCogs = inv.lines().stream().mapToDouble(l -> l.costPrice() * l.qty()).sum();
+        double invProfit = inv.netTotal() - invCogs;
+        if (invCogs > 0) totals.add(detailRow("Profit", "Rs. " + String.format("%,.2f", invProfit)));
         body.add(totals);
         body.add(Box.createVerticalStrut(12));
 
-        // Returns section placeholder — loaded async
+        // Returns section
         JLabel returnsTitle = new JLabel("RETURNS");
         returnsTitle.setFont(returnsTitle.getFont().deriveFont(Font.BOLD, 10f));
         returnsTitle.setForeground(AMBER);
@@ -445,7 +496,6 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         returnsPlaceholder.setAlignmentX(Component.LEFT_ALIGNMENT);
         body.add(returnsPlaceholder);
 
-        // Load returns async
         new SwingWorker<List<ReturnDto>, Void>() {
             @Override protected List<ReturnDto> doInBackground() {
                 return returnService.getReturnsForInvoice(inv.invoiceNo());
@@ -483,7 +533,6 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         bodyScroll.getViewport().setOpaque(false);
         panel.add(bodyScroll, BorderLayout.CENTER);
 
-        // Buttons
         JPanel btnRow = new JPanel(new GridLayout(1, 2, 6, 0));
         btnRow.setOpaque(false);
         JButton reprint = new JButton("Reprint");
@@ -513,25 +562,19 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         row.setMaximumSize(new Dimension(Integer.MAX_VALUE, 42));
         row.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        JLabel item = new JLabel("<html><b>" + r.itemName() + "</b></html>");
+        JLabel item   = new JLabel("<html><b>" + r.itemName() + "</b></html>");
         item.setFont(item.getFont().deriveFont(11f));
-
-        JLabel qty  = new JLabel("Qty: " + r.qty());
+        JLabel qty    = new JLabel("Qty: " + r.qty());
         qty.setFont(qty.getFont().deriveFont(11f));
         qty.setForeground(TEXT2);
-
         JLabel reason = new JLabel(r.reason());
         reason.setFont(reason.getFont().deriveFont(10f));
         reason.setForeground(AMBER);
-
-        JLabel date = new JLabel(r.returnDate() != null ? sdf.format(r.returnDate()) : "—");
+        JLabel date   = new JLabel(r.returnDate() != null ? sdf.format(r.returnDate()) : "—");
         date.setFont(date.getFont().deriveFont(10f));
         date.setForeground(TEXT2);
 
-        row.add(item);
-        row.add(qty);
-        row.add(reason);
-        row.add(date);
+        row.add(item); row.add(qty); row.add(reason); row.add(date);
         return row;
     }
 
@@ -547,25 +590,5 @@ public class SalesHistoryPanel extends JPanel implements com.olympus.system.hawk
         row.add(l, BorderLayout.WEST);
         row.add(v, BorderLayout.CENTER);
         return row;
-    }
-
-    // ── Stat card helpers ─────────────────────────────────────────────────────
-
-    private CardPanel statCard(String label, String value) {
-        CardPanel c = new CardPanel(new BorderLayout(0, 4));
-        c.setBorder(new EmptyBorder(12, 14, 12, 14));
-        JLabel l = new JLabel(label);
-        l.setFont(l.getFont().deriveFont(12f));
-        l.setForeground(TEXT2);
-        JLabel v = new JLabel(value);
-        v.setFont(v.getFont().deriveFont(Font.BOLD, 18f));
-        c.add(l, BorderLayout.NORTH);
-        c.add(v, BorderLayout.CENTER);
-        return c;
-    }
-
-    private JLabel valueLabel(JPanel parent) {
-        CardPanel card = (CardPanel) parent.getComponent(parent.getComponentCount() - 1);
-        return (JLabel) card.getComponent(1);
     }
 }

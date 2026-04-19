@@ -347,7 +347,7 @@ public class ViewSales extends javax.swing.JInternalFrame {
                     v.add(invoiceinfo.getStat());
                     v.add(invoiceinfo.getPaid());
                     v.add(invoiceinfo.getDiscount());
-                    v.add(invoiceinfo.getTotal());
+                    v.add(invoiceinfo.getNetTotal());
                     dtm.addRow(v);
                 }
             }
@@ -401,7 +401,7 @@ public class ViewSales extends javax.swing.JInternalFrame {
                 v.add(invoiceinfo.getStat());
                 v.add(invoiceinfo.getPaid());
                 v.add(invoiceinfo.getDiscount());
-                v.add(invoiceinfo.getTotal());
+                v.add(invoiceinfo.getNetTotal());
                 dtm.addRow(v);
             }
 

@@ -264,7 +264,7 @@ public class StockAdjustmentPanel extends JPanel {
 
     private void updatePreview() {
         if (selectedItem == null || qtySpinner == null) return;
-        int current = selectedItem.currentQty();
+        int current = (int) selectedItem.currentQty();
         int qty     = ((Number) qtySpinner.getValue()).intValue();
         int after   = switch (selectedType) {
             case "REMOVE"   -> Math.max(0, current - qty);
@@ -320,7 +320,7 @@ public class StockAdjustmentPanel extends JPanel {
         if (!ConfirmDialog.show(this, "Confirm Adjustment", confirmMsg, "Apply")) return;
 
         Long empId = SessionContext.current() != null ? SessionContext.current().getEmployee().id() : null;
-        int current = selectedItem.currentQty();
+        int current = (int) selectedItem.currentQty();
         int after = switch (selectedType) {
             case "REMOVE", "WRITEOFF" -> Math.max(0, current - qty);
             case "SET"                -> qty;
