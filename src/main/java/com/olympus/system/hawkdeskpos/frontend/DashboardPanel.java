@@ -49,7 +49,7 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
     private final ReportService   reportService;
 
     // Summary tiles
-    private JLabel revenueVal, txVal, itemsVal, profitVal, returnsVal;
+    private JLabel salesRevVal, discountVal, netRevVal, stockPurchVal, cashRefundVal, netProfitVal;
     private JPanel summaryTilesRow;
 
     // Sidebar
@@ -181,17 +181,18 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
         main.add(summaryHeader);
         main.add(Box.createVerticalStrut(6));
 
-        // ── Summary tiles ─────────────────────────────────────────────────────
-        summaryTilesRow = new JPanel(new GridLayout(1, 5, 10, 0));
+        // ── Summary tiles (2 rows × 3) ────────────────────────────────────────
+        summaryTilesRow = new JPanel(new GridLayout(2, 3, 10, 10));
         summaryTilesRow.setOpaque(false);
-        summaryTilesRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 80));
+        summaryTilesRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 170));
         summaryTilesRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        revenueVal = addStatTile(summaryTilesRow, "Revenue",       "Rs. 0.00", "#185FA5");
-        txVal      = addStatTile(summaryTilesRow, "Transactions",  "0",        "#2E7D32");
-        itemsVal   = addStatTile(summaryTilesRow, "Items Sold",    "0",        "#1E3A5F");
-        profitVal  = addStatTile(summaryTilesRow, "Profit",        "Rs. 0.00", "#6A1B9A");
-        returnsVal = addStatTile(summaryTilesRow, "Returns",       "0",        "#C62828");
+        salesRevVal  = addStatTile(summaryTilesRow, "Sales Revenue",    "Rs. 0.00", "#185FA5");
+        discountVal  = addStatTile(summaryTilesRow, "Discounts Given",  "Rs. 0.00", "#E65100");
+        netRevVal    = addStatTile(summaryTilesRow, "Net Revenue",       "Rs. 0.00", "#2E7D32");
+        stockPurchVal= addStatTile(summaryTilesRow, "Stock Purchases",  "Rs. 0.00", "#C62828");
+        cashRefundVal= addStatTile(summaryTilesRow, "Cash Refunds",     "Rs. 0.00", "#B71C1C");
+        netProfitVal = addStatTile(summaryTilesRow, "Net Profit",        "Rs. 0.00", "#6A1B9A");
 
         main.add(summaryTilesRow);
         main.add(Box.createVerticalStrut(18));
@@ -303,21 +304,33 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
 
     private void loadSummaryAsync() {
         Date[] range = getSummaryDateRange();
-        new SwingWorker<ReportService.PeriodStats, Void>() {
-            @Override protected ReportService.PeriodStats doInBackground() {
-                return reportService.getStats(range[0], range[1]);
+        new SwingWorker<Void, Void>() {
+            ReportService.PeriodStats    stats;
+            ReportService.FinanceSummary fin;
+
+            @Override protected Void doInBackground() {
+                stats = reportService.getStats(range[0], range[1]);
+                fin   = reportService.getFinanceSummary(range[0], range[1]);
+                return null;
             }
+
             @Override protected void done() {
-                try {
-                    ReportService.PeriodStats stats = get();
-                    if (stats != null) {
-                        revenueVal.setText(String.format("Rs. %.2f", stats.revenue()));
-                        txVal     .setText(String.valueOf(stats.transactions()));
-                        itemsVal  .setText(String.valueOf(stats.itemsSold()));
-                        profitVal .setText(String.format("Rs. %.2f", stats.profit()));
-                        returnsVal.setText(String.valueOf(stats.returns()));
-                    }
-                } catch (Exception ignored) {}
+                if (stats == null || fin == null) return;
+                double salesRev  = fin.salesRevenue();
+                double discount  = fin.discountGiven();
+                double netRev    = salesRev - discount;
+                double stockPurch= fin.grnCost();
+                double refunds   = fin.refundsGiven();
+                double netProfit = netRev - stockPurch - fin.expenses() - refunds;
+
+                salesRevVal  .setText(String.format("Rs. %.2f", salesRev));
+                discountVal  .setText(String.format("Rs. %.2f", discount));
+                netRevVal    .setText(String.format("Rs. %.2f", netRev));
+                stockPurchVal.setText(String.format("Rs. %.2f", stockPurch));
+                cashRefundVal.setText(String.format("Rs. %.2f", refunds));
+                netProfitVal .setText(String.format("Rs. %.2f", netProfit));
+                netProfitVal .setForeground(netProfit >= 0
+                        ? new Color(0x2E, 0x7D, 0x32) : new Color(0xC6, 0x28, 0x28));
             }
         }.execute();
     }

@@ -372,6 +372,8 @@ public class LoginPanel extends JPanel {
                 grid.add(btn);
             } else if (lbl.equals("⌫")) {
                 JButton btn = numBtn("⌫", true);
+                Font sf = symbolFont('⌫', 22f);
+                if (sf != null) btn.setFont(sf);
                 btn.addActionListener(e -> backspacePin());
                 grid.add(btn);
             } else {
@@ -607,6 +609,19 @@ public class LoginPanel extends JPanel {
             case "STOCK_KEEPER" -> "Stock Keeper";
             default             -> "Cashier";
         };
+    }
+
+    /** Returns the first system font family that actually contains a glyph for {@code c}. */
+    private static Font symbolFont(char c, float size) {
+        java.util.Set<String> avail = new java.util.HashSet<>(java.util.Arrays.asList(
+                GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()));
+        for (String family : new String[]{"Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols", "DejaVu Sans"}) {
+            if (avail.contains(family)) {
+                Font f = new Font(family, Font.PLAIN, 1);
+                if (f.canDisplay(c)) return f.deriveFont(size);
+            }
+        }
+        return null;
     }
 
     // ── Rounded border helper ─────────────────────────────────────────────────

@@ -193,11 +193,13 @@ public class SettingsPanel extends JPanel implements Refreshable {
                 showSection(section);
             }
             @Override public void mouseEntered(java.awt.event.MouseEvent e) {
-                row.setBackground(new Color(0xF0, 0xF2, 0xF5));
+                row.setBackground(new Color(0xE4, 0xE8, 0xEF));
                 row.setOpaque(true);
+                row.repaint();
             }
             @Override public void mouseExited(java.awt.event.MouseEvent e) {
                 row.setOpaque(false);
+                row.repaint();
             }
         });
         return row;
@@ -732,9 +734,11 @@ public class SettingsPanel extends JPanel implements Refreshable {
             @Override public void mouseEntered(java.awt.event.MouseEvent e) {
                 row.setBackground(new Color(0xFF, 0xEB, 0xEE));
                 row.setOpaque(true);
+                row.repaint();
             }
             @Override public void mouseExited(java.awt.event.MouseEvent e) {
                 row.setOpaque(false);
+                row.repaint();
             }
         });
         return row;

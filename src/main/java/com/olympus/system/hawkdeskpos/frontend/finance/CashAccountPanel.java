@@ -83,6 +83,8 @@ public class CashAccountPanel extends JPanel
 
         JPanel hBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         hBtns.setOpaque(false);
+        JButton manualEntryBtn = new JButton("⊕ Manual Entry");
+        manualEntryBtn.addActionListener(e -> showManualEntryDialog());
         JButton transferBtn = new JButton("⇄ Transfer");
         transferBtn.addActionListener(e -> showTransferDialog());
         JButton addAccBtn = new JButton("+ Add Account");
@@ -91,6 +93,7 @@ public class CashAccountPanel extends JPanel
         refreshBtn.addActionListener(e -> loadAccounts());
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_CASHFLOW));
+        hBtns.add(manualEntryBtn);
         hBtns.add(transferBtn);
         hBtns.add(addAccBtn);
         hBtns.add(refreshBtn);
@@ -607,6 +610,158 @@ public class CashAccountPanel extends JPanel
                 if (selectedAccount != null) loadLedger(selectedAccount.getId());
             }
         }.execute();
+    }
+
+    // ── Manual income / expense entry ─────────────────────────────────────────
+
+    private void showManualEntryDialog() {
+        List<CashAccount> accs = cashAccountService.listAccounts();
+        if (accs.isEmpty()) {
+            JOptionPane.showMessageDialog(this,
+                    "No accounts found. Create an account first.",
+                    "No Accounts", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        // Type
+        JRadioButton incomeRb  = new JRadioButton("Income",  true);
+        JRadioButton expenseRb = new JRadioButton("Expense", false);
+        incomeRb.setForeground(GREEN);
+        expenseRb.setForeground(RED);
+        ButtonGroup typeGroup = new ButtonGroup();
+        typeGroup.add(incomeRb);
+        typeGroup.add(expenseRb);
+        JPanel typeRow = new JPanel(new FlowLayout(FlowLayout.LEFT, 14, 0));
+        typeRow.setOpaque(false);
+        typeRow.add(incomeRb);
+        typeRow.add(expenseRb);
+
+        // Account
+        JComboBox<CashAccount> accountCombo = new JComboBox<>(accs.toArray(new CashAccount[0]));
+        accountCombo.setRenderer((list, v, i, sel, focus) ->
+                new JLabel(v == null ? "" : v.getName() + "  (Rs. " + String.format("%,.2f", v.getBalance()) + ")"));
+        if (selectedAccount != null)
+            accs.stream().filter(a -> a.getId().equals(selectedAccount.getId()))
+                    .findFirst().ifPresent(accountCombo::setSelectedItem);
+
+        // Category — swaps on type change
+        String[] incomeCats  = {"Manual Income", "Sales", "Salary Received", "Loan Received",
+                                 "Interest", "Investment", "Other"};
+        String[] expenseCats = {"Manual Expense", "Utilities", "Rent", "Salaries", "Maintenance",
+                                 "Transport", "Office Supplies", "Bank Charges", "Other"};
+        JComboBox<String> categoryCombo = new JComboBox<>(incomeCats);
+        categoryCombo.setEditable(true);
+        incomeRb .addActionListener(e -> categoryCombo.setModel(new DefaultComboBoxModel<>(incomeCats)));
+        expenseRb.addActionListener(e -> categoryCombo.setModel(new DefaultComboBoxModel<>(expenseCats)));
+
+        // Fields
+        JTextField amtField  = new JTextField(14);
+        JTextField descField = new JTextField(22);
+        JTextField refField  = new JTextField(22);
+
+        JSpinner dateSpinner = new JSpinner(new SpinnerDateModel());
+        dateSpinner.setEditor(new JSpinner.DateEditor(dateSpinner, "yyyy-MM-dd HH:mm"));
+        dateSpinner.setValue(new Date());
+
+        // Form
+        JPanel form = new JPanel(new GridBagLayout());
+        form.setBorder(new EmptyBorder(14, 18, 10, 18));
+        GridBagConstraints gc = new GridBagConstraints();
+        gc.insets = new Insets(5, 5, 5, 5);
+        gc.anchor = GridBagConstraints.WEST;
+        int r = 0;
+        addFormRow(form, gc, r++, "Type:",         typeRow);
+        addFormRow(form, gc, r++, "Account:",      accountCombo);
+        addFormRow(form, gc, r++, "Amount (Rs.):", amtField);
+        addFormRow(form, gc, r++, "Category:",     categoryCombo);
+        addFormRow(form, gc, r++, "Description:",  descField);
+        addFormRow(form, gc, r++, "Reference:",    refField);
+        addFormRow(form, gc, r,   "Date / Time:",  dateSpinner);
+
+        // Dialog
+        java.awt.Window win = SwingUtilities.getWindowAncestor(this);
+        JDialog dlg = win instanceof java.awt.Frame
+                ? new JDialog((java.awt.Frame) win, "Add Manual Transaction", true)
+                : new JDialog((java.awt.Dialog) win, "Add Manual Transaction", true);
+        dlg.setLayout(new BorderLayout());
+        dlg.add(form, BorderLayout.CENTER);
+
+        JPanel btnBar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 10));
+        JButton cancelBtn = new JButton("Cancel");
+        JButton saveBtn   = new JButton("Record Transaction");
+        saveBtn.setBackground(NAVY);
+        saveBtn.setForeground(Color.WHITE);
+        saveBtn.setFocusPainted(false);
+        btnBar.add(cancelBtn);
+        btnBar.add(saveBtn);
+        dlg.add(btnBar, BorderLayout.SOUTH);
+
+        cancelBtn.addActionListener(e -> dlg.dispose());
+
+        saveBtn.addActionListener(e -> {
+            CashAccount acc = (CashAccount) accountCombo.getSelectedItem();
+            if (acc == null) {
+                JOptionPane.showMessageDialog(dlg, "Select an account.", "Validation", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            double amount;
+            try { amount = Double.parseDouble(amtField.getText().trim()); }
+            catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(dlg, "Enter a valid numeric amount.", "Validation", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            if (amount <= 0) {
+                JOptionPane.showMessageDialog(dlg, "Amount must be greater than zero.", "Validation", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+
+            boolean isInc  = incomeRb.isSelected();
+            Object  catObj = categoryCombo.getSelectedItem();
+            String category = catObj != null ? catObj.toString().trim() : "";
+            String desc     = descField.getText().trim();
+            String ref      = refField.getText().trim();
+            Date   txDate   = (Date) dateSpinner.getValue();
+            Long   eid      = empId();
+
+            if (desc.isEmpty()) desc = isInc ? "Manual Income" : "Manual Expense";
+
+            final boolean fi = isInc;
+            final double  fa = amount;
+            final String  fc = category.isEmpty() ? null : category;
+            final String  fd = desc;
+            final String  fr = ref.isEmpty() ? null : ref;
+            final CashAccount facc = acc;
+
+            dlg.dispose();
+
+            new SwingWorker<Void, Void>() {
+                @Override protected Void doInBackground() {
+                    if (fi) cashAccountService.recordManualIncome(fa, fd, fc, facc.getId(), txDate, eid);
+                    else    cashAccountService.recordManualExpense(fa, fd, fc, facc.getId(), txDate, eid);
+                    return null;
+                }
+                @Override protected void done() {
+                    selectedAccount = facc;
+                    loadAccounts();
+                    loadLedger(facc.getId());
+                }
+            }.execute();
+        });
+
+        amtField.addActionListener(e -> saveBtn.doClick());
+
+        dlg.pack();
+        dlg.setMinimumSize(new Dimension(430, dlg.getHeight()));
+        dlg.setLocationRelativeTo(this);
+        dlg.setVisible(true);
+    }
+
+    private static void addFormRow(JPanel form, GridBagConstraints gc,
+                                   int row, String label, JComponent comp) {
+        gc.gridx = 0; gc.gridy = row; gc.fill = GridBagConstraints.NONE; gc.weightx = 0;
+        form.add(new JLabel(label), gc);
+        gc.gridx = 1; gc.fill = GridBagConstraints.HORIZONTAL; gc.weightx = 1;
+        form.add(comp, gc);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

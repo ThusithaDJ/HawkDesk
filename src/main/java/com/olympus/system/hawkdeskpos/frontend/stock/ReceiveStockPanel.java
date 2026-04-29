@@ -126,6 +126,18 @@ public class ReceiveStockPanel extends JPanel implements com.olympus.system.hawk
         for (ItemDto item : items) addItemToDelivery(item);
     }
 
+    private static Font symbolFont(char c, float size) {
+        java.util.Set<String> avail = new java.util.HashSet<>(java.util.Arrays.asList(
+                GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()));
+        for (String family : new String[]{"Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols", "DejaVu Sans"}) {
+            if (avail.contains(family)) {
+                Font f = new Font(family, Font.PLAIN, 1);
+                if (f.canDisplay(c)) return f.deriveFont(size);
+            }
+        }
+        return null;
+    }
+
     // ── Build UI ──────────────────────────────────────────────────────────────
 
     private void buildUI() {
@@ -140,7 +152,10 @@ public class ReceiveStockPanel extends JPanel implements com.olympus.system.hawk
         header.add(title, BorderLayout.WEST);
         JButton back = new JButton("← Back");
         back.addActionListener(e -> Home.navigate(Home.CARD_STOCK));
-        JButton refreshBtn = new JButton("↺ Refresh");
+        JButton refreshBtn = new JButton();
+        Font font = symbolFont('↺', 12f);
+        refreshBtn.setText(font== null ? "Refresh": "↺ Refresh");
+        refreshBtn.setFont(font);
         refreshBtn.addActionListener(e -> reset());
         JPanel hBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
         hBtns.setOpaque(false);

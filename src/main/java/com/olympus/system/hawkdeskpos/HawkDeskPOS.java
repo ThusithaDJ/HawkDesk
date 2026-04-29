@@ -2,6 +2,7 @@ package com.olympus.system.hawkdeskpos;
 
 import com.formdev.flatlaf.FlatLightLaf;
 import com.olympus.system.hawkdeskpos.frontend.Home;
+import com.olympus.system.hawkdeskpos.frontend.SplashScreen;
 import com.olympus.system.hawkdeskpos.frontend.components.FontManager;
 import com.olympus.system.hawkdeskpos.service.SettingsService;
 
@@ -22,22 +23,15 @@ public class HawkDeskPOS {
             e.printStackTrace();
         }
 
-        // ── Trial check (no DB needed — reads config.cnf only) ────────────────
-        SettingsService trial = new SettingsService(null);
-        trial.ensureTrialStartDate();           // stamp start date on very first run
+        // Stamp trial start date before any UI is shown (reads config.cnf only)
+        new SettingsService(null).ensureTrialStartDate();
 
-//        if (trial.isTrialExpired()) {
-//            try {
-//                SwingUtilities.invokeAndWait(() -> showExpiredDialog(trial));
-//            } catch (Exception ignored) {
-//                showExpiredDialog(trial);
-//            }
-//            System.exit(0);
-//            return;
-//        }
-
-        // ── Launch main window ────────────────────────────────────────────────
-        SwingUtilities.invokeLater(() -> new Home().setVisible(true));
+        // ── Show splash → run pre-flight checks → launch main window ──────────
+        SwingUtilities.invokeLater(() -> {
+            SplashScreen splash = new SplashScreen();
+            splash.setVisible(true);
+            splash.startChecks(() -> new Home().setVisible(true));
+        });
     }
 
     private static void showExpiredDialog(SettingsService trial) {

@@ -77,7 +77,7 @@ public class StockAdjustmentPanel extends JPanel {
         JPanel content = new JPanel(new BorderLayout(14, 0));
         content.setOpaque(false);
 
-        // Left form
+        // Left form — pinned to top-left, does not stretch vertically
         JPanel left = new JPanel();
         left.setOpaque(false);
         left.setLayout(new BoxLayout(left, BoxLayout.Y_AXIS));
@@ -89,16 +89,25 @@ public class StockAdjustmentPanel extends JPanel {
         left.add(Box.createVerticalStrut(16));
         left.add(buildActionRow());
 
-        JScrollPane scroll = new JScrollPane(left);
+        // Wrap in BorderLayout.NORTH so the form hugs the top and doesn't
+        // expand to fill the full scroll-pane height
+        JPanel leftHost = new JPanel(new BorderLayout());
+        leftHost.setOpaque(false);
+        leftHost.add(left, BorderLayout.NORTH);
+
+        JScrollPane scroll = new JScrollPane(leftHost);
         scroll.setBorder(null);
         scroll.setOpaque(false);
         scroll.getViewport().setOpaque(false);
         content.add(scroll, BorderLayout.CENTER);
 
-        // Right preview
-        JPanel right = buildPreviewPanel();
-        right.setPreferredSize(new Dimension(240, 0));
-        content.add(right, BorderLayout.EAST);
+        // Right preview — wrap in BorderLayout.NORTH so the card only
+        // occupies its natural height and doesn't stretch to fill the view
+        JPanel rightHost = new JPanel(new BorderLayout());
+        rightHost.setOpaque(false);
+        rightHost.setPreferredSize(new Dimension(240, 0));
+        rightHost.add(buildPreviewPanel(), BorderLayout.NORTH);
+        content.add(rightHost, BorderLayout.EAST);
 
         root.add(content, BorderLayout.CENTER);
         add(root);
@@ -280,6 +289,8 @@ public class StockAdjustmentPanel extends JPanel {
     private JPanel buildActionRow() {
         JPanel row = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         row.setOpaque(false);
+        row.setMaximumSize(new Dimension(600, 40));
+        row.setAlignmentX(Component.LEFT_ALIGNMENT);
         JButton cancel = new JButton("Cancel");
         cancel.addActionListener(e -> Home.navigate(Home.CARD_STOCK));
         JButton apply = new JButton("Apply Adjustment");
@@ -357,7 +368,7 @@ public class StockAdjustmentPanel extends JPanel {
     private CardPanel sectionCard(String title) {
         CardPanel c = new CardPanel(new BorderLayout(0, 10));
         ((JPanel)c).setBorder(new EmptyBorder(14, 14, 14, 14));
-        ((JPanel)c).setMaximumSize(new Dimension(Integer.MAX_VALUE, 200));
+        ((JPanel)c).setMaximumSize(new Dimension(600, 200));
         ((JPanel)c).setAlignmentX(Component.LEFT_ALIGNMENT);
         JLabel t = new JLabel(title);
         t.setFont(t.getFont().deriveFont(Font.BOLD, 11f));
