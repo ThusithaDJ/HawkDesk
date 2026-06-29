@@ -48,6 +48,7 @@
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Income"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.Expense"/>
         <mapping class="com.olympus.system.hawkdeskpos.db.dao.CashTransaction"/>
+        <mapping class="com.olympus.system.hawkdeskpos.db.dao.AppLicense"/>
 
     </session-factory>
 </hibernate-configuration>

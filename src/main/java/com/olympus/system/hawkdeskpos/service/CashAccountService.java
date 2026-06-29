@@ -57,6 +57,27 @@ public class CashAccountService {
         } catch (Exception e) { return null; }
     }
 
+    /**
+     * Creates a default "Cashier" CASH_DRAWER account if none exists.
+     * Called once at application startup.
+     */
+    public void ensureCashDrawerExists() {
+        try (var session = sf.openSession()) {
+            Long count = session.createQuery(
+                    "SELECT COUNT(a) FROM CashAccount a " +
+                    "WHERE a.accountType = :type AND a.active = true",
+                    Long.class)
+                    .setParameter("type", CashAccount.AccountType.CASH_DRAWER)
+                    .uniqueResult();
+            if (count != null && count > 0) return;
+            Transaction tx = session.beginTransaction();
+            session.persist(new CashAccount("Cashier", CashAccount.AccountType.CASH_DRAWER));
+            tx.commit();
+        } catch (Exception e) {
+            System.err.println("CashAccountService.ensureCashDrawerExists: " + e.getMessage());
+        }
+    }
+
     // ── Account management ────────────────────────────────────────────────────
 
     public void addAccount(String name, CashAccount.AccountType type, String notes) {

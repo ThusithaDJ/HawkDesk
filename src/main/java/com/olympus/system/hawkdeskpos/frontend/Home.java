@@ -1,5 +1,6 @@
 package com.olympus.system.hawkdeskpos.frontend;
 
+import com.olympus.system.hawkdeskpos.db.dao.CashAccount;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
 import com.olympus.system.hawkdeskpos.dto.CustomerDto;
 import com.olympus.system.hawkdeskpos.dto.ItemDto;
@@ -18,11 +19,16 @@ import com.olympus.system.hawkdeskpos.service.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import com.olympus.system.hawkdeskpos.plugin.PluginContext;
+import com.olympus.system.hawkdeskpos.plugin.PluginLoader;
+import com.olympus.system.hawkdeskpos.plugin.PluginRegistry;
 import com.olympus.system.hawkdeskpos.session.SessionContext;
 import org.hibernate.SessionFactory;
 
 import javax.swing.*;
 import java.awt.*;
+import java.io.File;
+import java.util.function.Supplier;
 
 /**
  * Main application window — undecorated, always maximised, CardLayout host.
@@ -119,9 +125,25 @@ public class Home extends JFrame {
         reportService   = new ReportService(sf);
         settingsService = new SettingsService(sf);
         backupService   = new BackupService(sf, settingsService);
+        backupService.startAutoBackupScheduler();
         customerService     = new CustomerService(sf);
         uomService          = new UomService(sf);
         cashAccountService  = new CashAccountService(sf, settingsService);
+        cashAccountService.ensureCashDrawerExists();
+
+        // Load plugins from the plugins/ directory
+        PluginLoader.loadAll(PluginLoader.resolvePluginsDir(), new PluginContext() {
+            @Override
+            public void registerPanel(String cardName, Supplier<JPanel> factory) {
+                PluginRegistry.getInstance().registerPanel(new PluginRegistry.PanelEntry(cardName, factory));
+            }
+            @Override
+            public void addNavItem(String label, String cardName) {
+                PluginRegistry.getInstance().registerNav(new PluginRegistry.NavEntry(label, cardName));
+            }
+            @Override
+            public org.hibernate.SessionFactory getSessionFactory() { return sf; }
+        });
 
         // Run expiry check immediately, then every 6 hours
         expiryTimer.scheduleAtFixedRate(
@@ -164,7 +186,7 @@ public class Home extends JFrame {
         cardHost.add(new ReportsPanel(reportService, settingsService), CARD_REPORTS);
         cardHost.add(new ManageCategoriesPanel(categoryService), CARD_CATS);
         cardHost.add(new UserManagementPanel(userService), CARD_USERS);
-        cardHost.add(new SettingsPanel(settingsService, authService, sf, cashAccountService), CARD_SETTINGS);
+        cardHost.add(new SettingsPanel(settingsService, authService, sf, cashAccountService, backupService), CARD_SETTINGS);
         cardHost.add(new BackupPanel(backupService), CARD_BACKUP);
         cardHost.add(new GrnHistoryPanel(stockService), CARD_GRN_HIST);
         cardHost.add(new CustomerPanel(customerService, saleService), CARD_CUSTOMERS);
@@ -172,16 +194,55 @@ public class Home extends JFrame {
         cardHost.add(new CashflowPanel(reportService, settingsService, saleService, cashAccountService, stockService), CARD_CASHFLOW);
         cardHost.add(new CustomerDetailsPanel(saleService, customerService), CARD_CUSTOMER_DETAILS);
         cardHost.add(new CashAccountPanel(cashAccountService), CARD_CASH_ACCOUNTS);
+
+        // Plugin-contributed panels
+        for (PluginRegistry.PanelEntry pe : PluginRegistry.getInstance().getPanels()) {
+            cardHost.add(pe.factory().get(), pe.cardName());
+        }
     }
 
     private void onLoginSuccess() {
         if (navBar != null) rootPanel.remove(navBar);
         navBar = new NavBar(settingsService.shopName(), this::onLogout);
+        for (PluginRegistry.NavEntry nav : PluginRegistry.getInstance().getNavItems()) {
+            navBar.addNavButton(nav.label(), nav.cardName());
+        }
         wireNavButtons(navBar);
         rootPanel.add(navBar, BorderLayout.NORTH);
         rootPanel.revalidate();
         rootPanel.repaint();
         navigate(CARD_DASH);
+        checkCashDrawerBalance();
+    }
+
+    private void checkCashDrawerBalance() {
+        new SwingWorker<CashAccount, Void>() {
+            @Override protected CashAccount doInBackground() {
+                return cashAccountService.getCashDrawer();
+            }
+            @Override protected void done() {
+                try {
+                    CashAccount drawer = get();
+                    if (drawer == null || Math.abs(drawer.getBalance()) >= 0.001) return;
+                    int choice = JOptionPane.showConfirmDialog(Home.this,
+                            "<html><b>" + drawer.getName() + "</b> (Cash Drawer) balance is Rs. 0.00.<br>" +
+                            "Do you want to set an opening balance?</html>",
+                            "Cash Drawer Balance", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+                    if (choice != JOptionPane.YES_OPTION) return;
+                    String input = JOptionPane.showInputDialog(Home.this,
+                            "Enter opening balance for " + drawer.getName() + ":",
+                            "Set Opening Balance", JOptionPane.PLAIN_MESSAGE);
+                    if (input == null || input.trim().isEmpty()) return;
+                    try {
+                        double amount = Double.parseDouble(input.trim());
+                        if (amount > 0) cashAccountService.adjustBalance(drawer.getId(), amount, "Opening Balance", null);
+                    } catch (NumberFormatException ex) {
+                        JOptionPane.showMessageDialog(Home.this, "Invalid amount entered.",
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }.execute();
     }
 
     private void wireNavButtons(Container container) {

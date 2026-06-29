@@ -44,7 +44,7 @@ public class SalesHistoryPanel extends JPanel
     private final ReturnService returnService;
 
     // Stat tile labels
-    private JLabel revenueLabel, txLabel, itemsLabel, profitLabel, returnsLabel;
+    private JLabel revenueLabel, txLabel, itemsLabel, profitLabel, returnsLabel, returnsQtyLabel;
 
     private JTextField         searchField;
     private JComboBox<String>  paymentFilter;
@@ -56,6 +56,10 @@ public class SalesHistoryPanel extends JPanel
     private List<InvoiceDto>   allInvoices;
     private List<InvoiceDto>   displayedInvoices;
     private JPanel             detailContent;
+    /** invoiceNo → cash-refunded profit; populated for Partial Return invoices. */
+    private java.util.Map<String, Double>   partialReturnProfit = java.util.Collections.emptyMap();
+    /** invoiceNo → [totalReturnedQty, totalReturnedSaleAmount] from the return table. */
+    private java.util.Map<String, double[]> returnDataByInvoice = java.util.Collections.emptyMap();
 
     private static final String[] COLS = {
             "Invoice #", "Date/Time", "Cashier", "Items", "Payment", "Amount (Rs.)", "Status"
@@ -100,11 +104,36 @@ public class SalesHistoryPanel extends JPanel
         // ── 5 stat tiles ──────────────────────────────────────────────────────
         JPanel statBar = new JPanel(new GridLayout(1, 5, 10, 0));
         statBar.setOpaque(false);
-        revenueLabel = addTile(statBar, "Revenue",       "Rs. 0.00", "#185FA5");
-        txLabel      = addTile(statBar, "Transactions",  "0",        "#2E7D32");
-        itemsLabel   = addTile(statBar, "Items Sold",    "0",        "#1E3A5F");
-        profitLabel  = addTile(statBar, "Profit",        "Rs. 0.00", "#6A1B9A");
-        returnsLabel = addTile(statBar, "Returns (Total)", "0",      "#C62828");
+        revenueLabel = addTile(statBar, "Revenue",       "Rs. 0.00", "#185FA5", "Total revenue from displayed invoices (after discounts)");
+        txLabel      = addTile(statBar, "Transactions",  "0",        "#2E7D32", "Number of transactions in the selected period");
+        itemsLabel   = addTile(statBar, "Items Sold",    "0",        "#1E3A5F", "Total quantity of items sold across all transactions");
+        profitLabel  = addTile(statBar, "Profit",        "Rs. 0.00", "#6A1B9A", "Revenue minus cost of goods sold (COGS) and returned-item profits");
+        // Returns tile — shows invoice count + total items quantity returned
+        {
+            String retTooltip = "Number of return transactions and total item quantity returned";
+            CardPanel c = new CardPanel(new BorderLayout(0, 4));
+            c.setBorder(new EmptyBorder(12, 14, 12, 14));
+            c.setToolTipText(retTooltip);
+            JLabel l = new JLabel("Returns (Total)");
+            l.setFont(l.getFont().deriveFont(12f));
+            l.setForeground(TEXT2);
+            l.setToolTipText(retTooltip);
+            returnsLabel = new JLabel("0");
+            returnsLabel.setFont(returnsLabel.getFont().deriveFont(Font.BOLD, 18f));
+            returnsLabel.setForeground(RED);
+            returnsLabel.setToolTipText(retTooltip);
+            returnsQtyLabel = new JLabel("Rs. 0.00");
+            returnsQtyLabel.setFont(returnsQtyLabel.getFont().deriveFont(11f));
+            returnsQtyLabel.setForeground(RED);
+            returnsQtyLabel.setToolTipText(retTooltip);
+            JPanel vals = new JPanel(new GridLayout(2, 1, 0, 1));
+            vals.setOpaque(false);
+            vals.add(returnsLabel);
+            vals.add(returnsQtyLabel);
+            c.add(l,    BorderLayout.NORTH);
+            c.add(vals, BorderLayout.CENTER);
+            statBar.add(c);
+        }
 
         // Left: filters + table
         JPanel left = new JPanel(new BorderLayout(0, 8));
@@ -168,14 +197,17 @@ public class SalesHistoryPanel extends JPanel
 
     // ── Tile helper ───────────────────────────────────────────────────────────
 
-    private JLabel addTile(JPanel parent, String label, String value, String hexColor) {
+    private JLabel addTile(JPanel parent, String label, String value, String hexColor, String tooltip) {
         CardPanel c = new CardPanel(new BorderLayout(0, 4));
         c.setBorder(new EmptyBorder(12, 14, 12, 14));
+        c.setToolTipText(tooltip);
         JLabel l = new JLabel(label);
         l.setFont(l.getFont().deriveFont(12f));
         l.setForeground(TEXT2);
+        l.setToolTipText(tooltip);
         JLabel v = new JLabel(value);
         v.setFont(v.getFont().deriveFont(Font.BOLD, 18f));
+        v.setToolTipText(tooltip);
         try {
             v.setForeground(Color.decode(hexColor));
         } catch (NumberFormatException ignored) {}
@@ -259,12 +291,30 @@ public class SalesHistoryPanel extends JPanel
         Date to   = range[1];
 
         new SwingWorker<List<InvoiceDto>, Void>() {
+            java.util.Map<String, Double>   refundedProfitMap;
+            java.util.Map<String, double[]> returnDataMap;
+
             @Override protected List<InvoiceDto> doInBackground() {
-                return saleService.listInvoices(null, from, to, null);
+                List<InvoiceDto> invs = saleService.listInvoices(null, from, to, null);
+                List<String> partialNos = invs.stream()
+                        .filter(inv -> "Partial Return".equals(inv.stat()))
+                        .map(InvoiceDto::invoiceNo)
+                        .toList();
+                refundedProfitMap = returnService.getCashRefundedProfitByInvoice(partialNos);
+                List<String> returnNos = invs.stream()
+                        .filter(inv -> "Full Return".equals(inv.stat()) || "Partial Return".equals(inv.stat()))
+                        .map(InvoiceDto::invoiceNo)
+                        .toList();
+                returnDataMap = returnService.getReturnQtyAndAmountByInvoice(returnNos);
+                return invs;
             }
             @Override protected void done() {
                 try {
                     allInvoices = get();
+                    partialReturnProfit = refundedProfitMap != null
+                            ? refundedProfitMap : java.util.Collections.emptyMap();
+                    returnDataByInvoice = returnDataMap != null
+                            ? returnDataMap : java.util.Collections.emptyMap();
                     applyFilter();
                 } catch (Exception e) {
                     System.err.println("SalesHistoryPanel.loadDataAsync: " + e.getMessage());
@@ -292,30 +342,47 @@ public class SalesHistoryPanel extends JPanel
 
     /** Compute and display stat tiles from the currently displayed invoice list. */
     private void updateTiles(List<InvoiceDto> invs) {
-        double revenue   = 0;
-        int    tx        = 0;
-        int    itemsSold = 0;
-        double cogs      = 0;
-        int    returns   = 0;
+        double revenue        = 0;
+        int    tx             = 0;
+        int    itemsSold      = 0;
+        double cogs           = 0;
+        double returnedProfit = 0;
+        int    returnedQty    = 0;
+        double returnedAmt    = 0;
 
         for (InvoiceDto inv : invs) {
             if ("Void".equals(inv.stat())) continue;
+            boolean isFullReturn = "Full Return".equals(inv.stat());
             revenue += inv.netTotal();
             tx++;
+            double invCogs = 0;
             for (SaleLineDto line : inv.lines()) {
                 itemsSold += line.qty();
-                cogs += line.costPrice() * line.qty();
+                invCogs += line.costPrice() * line.qty();
             }
+            cogs += invCogs;
             String s = inv.stat();
-            if ("Full Return".equals(s) || "Partial Return".equals(s)) returns++;
+            if ("Full Return".equals(s) || "Partial Return".equals(s)) {
+                double[] data = returnDataByInvoice.get(inv.invoiceNo());
+                if (data != null) {
+                    returnedQty += (int) Math.round(data[0]);
+                    returnedAmt += data[1];
+                }
+            }
+            if (isFullReturn) {
+                returnedProfit += (inv.netTotal() - invCogs);
+            } else if ("Partial Return".equals(s)) {
+                returnedProfit += partialReturnProfit.getOrDefault(inv.invoiceNo(), 0.0);
+            }
         }
 
-        double profit = revenue - cogs;
-        revenueLabel.setText(String.format("Rs. %,.2f", revenue));
-        txLabel     .setText(String.valueOf(tx));
-        itemsLabel  .setText(String.valueOf(itemsSold));
-        profitLabel .setText(String.format("Rs. %,.2f", profit));
-        returnsLabel.setText(String.valueOf(returns));
+        double profit = revenue - cogs - returnedProfit;
+        revenueLabel  .setText(String.format("Rs. %,.2f", revenue));
+        txLabel       .setText(String.valueOf(tx));
+        itemsLabel    .setText(String.valueOf(itemsSold));
+        profitLabel   .setText(String.format("Rs. %,.2f", profit));
+        returnsLabel  .setText(returnedQty + " items");
+        returnsQtyLabel.setText(String.format("Rs. %,.2f", returnedAmt));
     }
 
     private void populateTable(List<InvoiceDto> invs) {

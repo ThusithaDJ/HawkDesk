@@ -653,8 +653,10 @@ public class CashflowPanel extends JPanel
                     creditCollectedVal  .setText("Collected: Rs. "   + String.format("%.2f", d.creditCollected()));
                     creditOutstandingVal.setText("Outstanding: Rs. " + String.format("%.2f", d.creditOutstanding()));
 
-                    double netRev = totalIn - d.discountGiven();
-                    double profit = netRev - d.grnCost() - d.cashRefunded();
+                    double netRev     = totalIn - d.discountGiven();
+                    // Sales profit mirrors SalesHistory: revenue − COGS − returned-item profit
+                    double salesProfit = totalIn - d.cogs() - d.returnedItemProfit();
+                    double profit      = salesProfit - d.grnCost() - d.expenses();
                     revenueVal   .setText("Rs. " + String.format("%,.2f", totalIn));
                     discountVal  .setText("Rs. " + String.format("%,.2f", d.discountGiven()));
                     netRevenueVal.setText("Rs. " + String.format("%,.2f", netRev));

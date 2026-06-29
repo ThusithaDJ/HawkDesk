@@ -1,7 +1,9 @@
 package com.olympus.system.hawkdeskpos.frontend;
 
 import com.olympus.system.hawkdeskpos.frontend.components.FontManager;
+import com.olympus.system.hawkdeskpos.service.LicenseService;
 import com.olympus.system.hawkdeskpos.service.SettingsService;
+import com.olympus.system.hawkdeskpos.util.DbConfig;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -64,7 +66,9 @@ public class SplashScreen extends JWindow {
     private JList<Object[]>            logList;
     private JButton                    exitButton;
 
-    private volatile boolean hasErrors = false;
+    private volatile boolean hasErrors    = false;
+    private volatile boolean needsDbSetup = false;
+    private Runnable         successCallback;
 
     public SplashScreen() {
         setSize(540, 460);
@@ -233,6 +237,17 @@ public class SplashScreen extends JWindow {
      * reveals the Exit button.
      */
     public void startChecks(Runnable onSuccess) {
+        this.successCallback = onSuccess;
+        this.hasErrors       = false;
+        this.needsDbSetup    = false;
+
+        SwingUtilities.invokeLater(() -> {
+            progressBar.setValue(0);
+            statusLabel.setText("Starting up...");
+            statusLabel.setForeground(TEXT_DIM);
+            exitButton.setVisible(false);
+        });
+
         SwingWorker<Boolean, Void> worker = new SwingWorker<>() {
             @Override
             protected Boolean doInBackground() {
@@ -243,10 +258,15 @@ public class SplashScreen extends JWindow {
             @Override
             protected void done() {
                 try {
-                    boolean ok = get();
+                    get();
+                    if (needsDbSetup) {
+                        SwingUtilities.invokeLater(SplashScreen.this::showDbSetupDialog);
+                        return;
+                    }
+                    boolean ok = !hasErrors;
                     if (ok) {
                         updateProgress(100, "Launching " + APP_NAME + "...");
-                        Timer t = new Timer(700, e -> { dispose(); onSuccess.run(); });
+                        Timer t = new Timer(700, e -> { dispose(); successCallback.run(); });
                         t.setRepeats(false);
                         t.start();
                     } else {
@@ -262,30 +282,50 @@ public class SplashScreen extends JWindow {
         worker.execute();
     }
 
+    private void showDbSetupDialog() {
+        statusLabel.setText("Database setup required — configure your connection.");
+        statusLabel.setForeground(COL_WARN);
+
+        DbSetupDialog dlg = new DbSetupDialog(this);
+        dlg.setVisible(true); // blocks on EDT via modal
+
+        if (dlg.isSaved()) {
+            logModel.clear();
+            log("ℹ  Database configured — retrying connection...", COL_INFO);
+            startChecks(successCallback);
+        } else {
+            statusLabel.setText("Database setup cancelled.");
+            statusLabel.setForeground(COL_ERR);
+            exitButton.setVisible(true);
+        }
+    }
+
     // ── Check orchestration ───────────────────────────────────────────────────
 
     private void runAllChecks() {
         updateProgress(5,  "Checking configuration file...");
         checkConfig();
-        pause(250);
+        pause(200);
 
         updateProgress(20, "Connecting to database...");
-        pause(150);
+        pause(100);
         Connection conn = checkDbConnection();
+
+        if (needsDbSetup) return; // will show setup dialog in done()
 
         if (conn != null) {
             updateProgress(50, "Verifying database tables...");
-            pause(150);
+            pause(100);
             checkTables(conn);
             closeSilently(conn);
         }
 
         updateProgress(80, "Verifying trial licence...");
-        pause(300);
+        pause(200);
         checkTrial();
 
         updateProgress(95, "Preparing application...");
-        pause(350);
+        pause(300);
     }
 
     // ── Individual checks ─────────────────────────────────────────────────────
@@ -303,24 +343,43 @@ public class SplashScreen extends JWindow {
     }
 
     private Connection checkDbConnection() {
-        try {
-            org.hibernate.cfg.Configuration cfg =
-                    new org.hibernate.cfg.Configuration().configure();
-            String url  = cfg.getProperty("hibernate.connection.url");
-            String user = cfg.getProperty("hibernate.connection.username");
-            String pass = cfg.getProperty("hibernate.connection.password");
+        String url, user, pass;
 
-            if (url == null || url.isBlank()) {
-                log("✗  Database URL not set in hibernate.cfg.xml", COL_ERR);
-                hasErrors = true;
+        DbConfig dbCfg = new DbConfig();
+        if (dbCfg.isConfigured()) {
+            url  = dbCfg.buildJdbcUrl();
+            user = dbCfg.getUser();
+            pass = dbCfg.getPassword();
+            log("ℹ  Using saved database config: "
+                    + dbCfg.getHost() + ":" + dbCfg.getPort() + "/" + dbCfg.getName(), COL_INFO);
+        } else {
+            // Fall back to hibernate.cfg.xml defaults
+            try {
+                org.hibernate.cfg.Configuration cfg =
+                        new org.hibernate.cfg.Configuration().configure();
+                url  = cfg.getProperty("hibernate.connection.url");
+                user = cfg.getProperty("hibernate.connection.username");
+                pass = cfg.getProperty("hibernate.connection.password");
+                log("ℹ  Using default connection from hibernate.cfg.xml", COL_INFO);
+            } catch (Exception e) {
+                log("✗  No database configuration found", COL_ERR);
+                needsDbSetup = true;
                 return null;
             }
+        }
 
+        if (url == null || url.isBlank()) {
+            log("✗  Database URL is empty — database setup required", COL_ERR);
+            needsDbSetup = true;
+            return null;
+        }
+
+        try {
             Class.forName("com.mysql.cj.jdbc.Driver");
             Connection conn = DriverManager.getConnection(url, user, pass);
-            // Report which DB we connected to
             String dbName = conn.getCatalog();
-            log("✓  Connected to database '" + dbName + "' on " + conn.getMetaData().getURL().split("\\?")[0].replaceFirst("jdbc:mysql://", ""), COL_OK);
+            log("✓  Connected to database '" + dbName + "' on "
+                    + conn.getMetaData().getURL().split("\\?")[0].replaceFirst("jdbc:mysql://", ""), COL_OK);
             return conn;
 
         } catch (ClassNotFoundException e) {
@@ -329,16 +388,17 @@ public class SplashScreen extends JWindow {
         } catch (SQLException e) {
             String msg = e.getMessage();
             if (msg != null && msg.contains("Access denied")) {
-                log("✗  Database access denied — check username / password in hibernate.cfg.xml", COL_ERR);
-            } else if (msg != null && (msg.contains("Connection refused") || msg.contains("Communications link failure"))) {
-                log("✗  Cannot reach MySQL — is the server running on localhost:3306?", COL_ERR);
+                log("✗  Access denied — check username / password", COL_ERR);
+            } else if (msg != null && (msg.contains("Connection refused")
+                    || msg.contains("Communications link failure"))) {
+                log("✗  Cannot reach MySQL — is the server running?", COL_ERR);
             } else {
-                log("✗  Database connection failed: " + e.getMessage(), COL_ERR);
+                log("✗  Database connection failed: " + msg, COL_ERR);
             }
-            hasErrors = true;
+            needsDbSetup = true;
         } catch (Exception e) {
             log("✗  Unexpected error: " + e.getMessage(), COL_ERR);
-            hasErrors = true;
+            needsDbSetup = true;
         }
         return null;
     }
@@ -377,6 +437,24 @@ public class SplashScreen extends JWindow {
         try {
             SettingsService s = new SettingsService(null);
             s.ensureTrialStartDate();
+
+            // Check if a valid licence is activated for this machine
+            String licKey       = s.licenseKey();
+            String licMachineId = s.licensedMachineId();
+            if (!licKey.isBlank() && !licMachineId.isBlank()
+                    && licMachineId.equalsIgnoreCase(LicenseService.getMachineId())) {
+                log("✓  Licensed copy — perpetual licence active", COL_OK);
+                return;
+            }
+
+            // License key exists but machine ID doesn't match — allow launch so the
+            // user can reach Settings → Licensing to re-activate rather than being
+            // locked out entirely (machine ID can shift with VPN/virtual adapters).
+            if (!licKey.isBlank()) {
+                log("⚠  Licence found — re-activation required on this machine", COL_WARN);
+                log("   Go to Settings → Licensing and click Activate Licence", COL_WARN);
+                return;
+            }
 
             if (s.isTrialExpired()) {
                 log("✗  Trial has expired — contact Olympus Systems to activate a licence", COL_ERR);
