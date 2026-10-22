@@ -51,8 +51,8 @@ public class AuthService {
                 return new LoginOutcome(LoginResult.LOCKED, null, null);
             }
 
-//            boolean pinOk = BCrypt.checkpw(rawPin, emp.getPinHash());
-            boolean pinOk = emp.getPinHash().equals(rawPin);
+            boolean pinOk = BCrypt.checkpw(rawPin, emp.getPinHash());
+//            boolean pinOk = emp.getPinHash().equals(rawPin);
             Transaction tx = session.beginTransaction();
             if (pinOk) {
                 emp.setFailedAttempts(0);
@@ -106,6 +106,17 @@ public class AuthService {
         }
     }
 
+    /** Verifies a raw PIN against the stored hash for the given employee without side effects. */
+    public boolean verifyPin(long employeeId, String rawPin) {
+        try (var session = sf.openSession()) {
+            Employee emp = session.get(Employee.class, employeeId);
+            if (emp == null || !emp.isActive()) return false;
+            return BCrypt.checkpw(rawPin, emp.getPinHash());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     // ── Private helpers ────────────────────────────────────────────────────────
 
     private EmployeeDto toDto(Employee emp) {
@@ -126,7 +137,8 @@ public class AuthService {
                     p.isCanEditItem(), p.isCanReceiveStock(), p.isCanAdjustStock(),
                     p.isCanManageCategories(), p.isCanDeleteCategories(),
                     p.isCanViewReports(), p.isCanExportReports(), p.isCanViewGrn(),
-                    p.isCanAccessSettings(), p.isCanManageUsers(), p.isCanAccessBackup());
+                    p.isCanAccessSettings(), p.isCanManageUsers(), p.isCanAccessBackup(),
+                    p.isCanViewBatchCost(), p.isCanOverrideFifo());
         } catch (Exception e) {
             return PermissionsDto.fullAccess(employeeId);
         }

@@ -5,7 +5,7 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.util.Properties;
 
-public class Configs {
+public class    Configs {
 
     private static final String CONFIG_PATH =
             System.getProperty("user.home") + File.separator + "HawkDeskPOS" + File.separator + "config.cnf";

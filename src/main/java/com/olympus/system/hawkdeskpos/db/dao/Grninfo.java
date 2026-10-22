@@ -19,7 +19,7 @@ public class Grninfo implements Serializable {
     @Column(name = "date")
     private Date date;
 
-    @Column(name = "sub_total")
+    @Column(name = "sub_total", columnDefinition = "DECIMAL")
     private Double subTotal;
 
     @Column(name = "supplier", length = 128)

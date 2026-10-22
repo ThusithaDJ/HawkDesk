@@ -1160,7 +1160,7 @@ public class Invoice extends javax.swing.JInternalFrame {
             Transaction trans = session.beginTransaction();
             Invoiceinfo info = new Invoiceinfo();
             info.setDate(new Date(System.currentTimeMillis()));
-            info.setTotal(tot);
+            info.setNetTotal(tot);
             info.setStat("delivered");
             info.setPaid(Double.parseDouble(txtPayment.getValue().toString()));
             info.setDiscount(dis == 0.0 ? 0.0
@@ -1228,7 +1228,7 @@ public class Invoice extends javax.swing.JInternalFrame {
                 invo.setStock(stock);
                 invo.setBatch(batch);
                 invo.setDateTime(new Date(System.currentTimeMillis()));
-                invo.setQty(qty);
+                invo.setQty((double) qty);
                 invo.setSubTotal(subTotal);
                 session.persist(invo);
                 invoiceTrans.commit();
@@ -1237,7 +1237,7 @@ public class Invoice extends javax.swing.JInternalFrame {
                 Transaction stockTrans = session.beginTransaction();
                 stock.setQty(stock.getQty() - qty);
                 if (stock.getQty() <= 0) {
-                    stock.setQty(0);
+                    stock.setQty(0.0);
                     stock.setStat("un-available");
                 }
                 session.merge(stock);

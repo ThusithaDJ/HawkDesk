@@ -7,7 +7,7 @@ public record StockLevelDto(
         String sku,
         String categoryName,
         String brandName,
-        int totalQty,
+        double totalQty,
         int minLevel,
         int maxLevel,
         double costPrice,

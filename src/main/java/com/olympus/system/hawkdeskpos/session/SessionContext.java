@@ -81,6 +81,8 @@ public class SessionContext {
         if (perms.canAccessSettings())   set.add(Permission.ACCESS_SETTINGS);
         if (perms.canManageUsers())      set.add(Permission.MANAGE_USERS);
         if (perms.canAccessBackup())     set.add(Permission.ACCESS_BACKUP);
+        if (perms.canViewBatchCost())    set.add(Permission.VIEW_BATCH_COST);
+        if (perms.canOverrideFifo())     set.add(Permission.OVERRIDE_FIFO);
         return set;
     }
 }

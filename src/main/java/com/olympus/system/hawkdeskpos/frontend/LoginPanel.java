@@ -4,6 +4,8 @@ import com.olympus.system.hawkdeskpos.db.dao.AuditLog;
 import com.olympus.system.hawkdeskpos.dto.EmployeeDto;
 import com.olympus.system.hawkdeskpos.service.AuditService;
 import com.olympus.system.hawkdeskpos.service.AuthService;
+import com.olympus.system.hawkdeskpos.service.LicenseService;
+import com.olympus.system.hawkdeskpos.service.SettingsService;
 import com.olympus.system.hawkdeskpos.session.SessionContext;
 
 import javax.swing.*;
@@ -29,9 +31,10 @@ public class LoginPanel extends JPanel {
     private static final Color SUCCESS = new Color(0x4C, 0xAF, 0x50);
     private static final Color DANGER  = new Color(0xEF, 0x9A, 0x9A);
 
-    private final AuthService   authService;
-    private final AuditService  auditService;
-    private final Runnable      onSuccess;
+    private final AuthService    authService;
+    private final AuditService   auditService;
+    private final Runnable       onSuccess;
+    private final SettingsService settingsService;
 
     private EmployeeDto selectedEmployee;
     private final StringBuilder pin = new StringBuilder();
@@ -55,10 +58,12 @@ public class LoginPanel extends JPanel {
 
     private Timer lockoutTimer;
 
-    public LoginPanel(AuthService authService, AuditService auditService, Runnable onSuccess) {
-        this.authService  = authService;
-        this.auditService = auditService;
-        this.onSuccess    = onSuccess;
+    public LoginPanel(AuthService authService, AuditService auditService,
+                      Runnable onSuccess, SettingsService settingsService) {
+        this.authService    = authService;
+        this.auditService   = auditService;
+        this.onSuccess      = onSuccess;
+        this.settingsService = settingsService;
         setLayout(new BorderLayout());
         setBackground(NAVY);
         buildUI();
@@ -132,8 +137,67 @@ public class LoginPanel extends JPanel {
         bottom.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createMatteBorder(1, 0, 0, 0, new Color(255,255,255,20)),
                 new EmptyBorder(12, 28, 14, 28)));
-        JLabel version = label("HawkPOS v2.0  ·  Last backup: —", 12, Font.PLAIN, new Color(255,255,255,89));
-        bottom.add(version, BorderLayout.WEST);
+        JPanel leftBtns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+        leftBtns.setOpaque(false);
+
+        JButton minimizeBtn = new JButton("—");
+        minimizeBtn.setForeground(WHITE);
+        minimizeBtn.setBackground(new Color(255, 255, 255, 0));
+        minimizeBtn.setOpaque(false);
+        minimizeBtn.setBorderPainted(false);
+        minimizeBtn.setFocusPainted(false);
+        minimizeBtn.setFont(minimizeBtn.getFont().deriveFont(14f));
+        minimizeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        minimizeBtn.setToolTipText("Minimize");
+        minimizeBtn.addActionListener(e -> {
+            java.awt.Window w = SwingUtilities.getWindowAncestor(this);
+            if (w instanceof javax.swing.JFrame f) f.setExtendedState(javax.swing.JFrame.ICONIFIED);
+        });
+        minimizeBtn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseEntered(java.awt.event.MouseEvent e) { minimizeBtn.setForeground(new Color(0xFF, 0xCC, 0x00)); }
+            @Override public void mouseExited(java.awt.event.MouseEvent e)  { minimizeBtn.setForeground(WHITE); }
+        });
+
+        JButton exitBtn = new JButton("Exit");
+        exitBtn.setForeground(WHITE);
+        exitBtn.setBackground(new Color(255, 255, 255, 0));
+        exitBtn.setOpaque(false);
+        exitBtn.setBorderPainted(false);
+        exitBtn.setFocusPainted(false);
+        exitBtn.setFont(exitBtn.getFont().deriveFont(12f));
+        exitBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        exitBtn.addActionListener(e -> System.exit(0));
+        exitBtn.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override public void mouseEntered(java.awt.event.MouseEvent e) { exitBtn.setForeground(new Color(0xFC, 0x8C, 0x8C)); }
+            @Override public void mouseExited(java.awt.event.MouseEvent e)  { exitBtn.setForeground(WHITE); }
+        });
+
+        leftBtns.add(minimizeBtn);
+        leftBtns.add(exitBtn);
+        bottom.add(leftBtns, BorderLayout.WEST);
+
+        // Trial status (centre of bottom bar) — hidden when a valid licence is active
+        String licKey       = settingsService != null ? settingsService.licenseKey()        : "";
+        String licMachineId = settingsService != null ? settingsService.licensedMachineId() : "";
+        boolean licensed = !licKey.isBlank() && !licMachineId.isBlank()
+                && licMachineId.equalsIgnoreCase(LicenseService.getMachineId());
+
+        if (settingsService != null && !licensed) {
+            long remaining = settingsService.trialDaysRemaining();
+            String trialText;
+            Color  trialColor;
+            if (remaining <= 3) {
+                trialText  = "⚠  Trial expires in " + remaining + " day" + (remaining == 1 ? "" : "s");
+                trialColor = new Color(0xFF, 0xCC, 0x00);  // amber
+            } else {
+                trialText  = "Trial: " + remaining + " day" + (remaining == 1 ? "" : "s") + " remaining";
+                trialColor = new Color(255, 255, 255, 120);
+            }
+            JLabel trialLabel = label(trialText, 12, Font.PLAIN, trialColor);
+            trialLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            bottom.add(trialLabel, BorderLayout.CENTER);
+        }
+
         JLabel copy = label("© 2026 Olympus Systems", 12, Font.PLAIN, new Color(255,255,255,89));
         bottom.add(copy, BorderLayout.EAST);
         add(bottom, BorderLayout.SOUTH);
@@ -159,7 +223,7 @@ public class LoginPanel extends JPanel {
             JPanel card = buildStaffCard(employees[i], false);
             card.addMouseListener(new java.awt.event.MouseAdapter() {
                 @Override public void mouseClicked(java.awt.event.MouseEvent e) { selectEmployee(idx); }
-                @Override public void mouseEntered(java.awt.event.MouseEvent e) { card.setBackground(new Color(255,255,255,56)); }
+                @Override public void mouseEntered(java.awt.event.MouseEvent e) { card.setBackground(new Color(255,255,255,38)); }
                 @Override public void mouseExited(java.awt.event.MouseEvent e)  {
                     card.setBackground(idx == getSelectedIndex()
                             ? new Color(255,255,255,46) : new Color(255,255,255,20));
@@ -186,8 +250,20 @@ public class LoginPanel extends JPanel {
     }
 
     private JPanel buildStaffCard(EmployeeDto emp, boolean selected) {
-        JPanel card = new JPanel(new BorderLayout(11, 0));
-        card.setBorder(new EmptyBorder(12, 14, 12, 14));
+        JPanel card = new JPanel(new BorderLayout(11, 0)) {
+            @Override protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                g2.setColor(getBackground());
+                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 12, 12);
+                g2.dispose();
+            }
+        };
+        card.setOpaque(false);
+        // Fixed height — stretches full width, height locked at 64px
+        card.setPreferredSize(new Dimension(card.getPreferredSize().width, 64));
+        card.setMinimumSize(new Dimension(0, 64));
+        card.setMaximumSize(new Dimension(Short.MAX_VALUE, 64));
         card.setBackground(selected ? new Color(255,255,255,46) : new Color(255,255,255,20));
         card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
 
@@ -302,6 +378,8 @@ public class LoginPanel extends JPanel {
                 grid.add(btn);
             } else if (lbl.equals("⌫")) {
                 JButton btn = numBtn("⌫", true);
+                Font sf = symbolFont('⌫', 22f);
+                if (sf != null) btn.setFont(sf);
                 btn.addActionListener(e -> backspacePin());
                 grid.add(btn);
             } else {
@@ -489,19 +567,39 @@ public class LoginPanel extends JPanel {
     }
 
     private static JPanel createLogoBox() {
-        JPanel p = new JPanel(new GridBagLayout()) {
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(new Color(255, 255, 255, 38));
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 9, 9);
-                g2.dispose();
+    // Load and scale the icon once, outside the anonymous class
+    Image logoImg = null;
+    try {
+        logoImg = new ImageIcon(
+            LoginPanel.class.getResource("/images/icons/hawkpos-icon.png")
+        ).getImage().getScaledInstance(24, 24, Image.SCALE_SMOOTH);
+    } catch (Exception ignored) {}
+
+    final Image img = logoImg;
+
+    JPanel p = new JPanel(new GridBagLayout()) {
+        @Override protected void paintComponent(Graphics g) {
+            super.paintComponent(g);                          // clear first
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            // rounded background
+            g2.setColor(new Color(255, 255, 255, 38));
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 9, 9);
+
+            // centred image (6px padding on each side inside the 36×36 box)
+            if (img != null) {
+                int pad = 6;
+                g2.drawImage(img, pad, pad, getWidth() - pad * 2, getHeight() - pad * 2, this);
             }
-        };
-        p.setOpaque(false);
-        p.setPreferredSize(new Dimension(36, 36));
-        return p;
-    }
+
+            g2.dispose();
+        }
+    };
+    p.setOpaque(false);
+    p.setPreferredSize(new Dimension(36, 36));
+    return p;
+}
 
     private static String initials(String name) {
         if (name == null || name.isEmpty()) return "?";
@@ -517,6 +615,19 @@ public class LoginPanel extends JPanel {
             case "STOCK_KEEPER" -> "Stock Keeper";
             default             -> "Cashier";
         };
+    }
+
+    /** Returns the first system font family that actually contains a glyph for {@code c}. */
+    private static Font symbolFont(char c, float size) {
+        java.util.Set<String> avail = new java.util.HashSet<>(java.util.Arrays.asList(
+                GraphicsEnvironment.getLocalGraphicsEnvironment().getAvailableFontFamilyNames()));
+        for (String family : new String[]{"Segoe UI Symbol", "Apple Symbols", "Noto Sans Symbols", "DejaVu Sans"}) {
+            if (avail.contains(family)) {
+                Font f = new Font(family, Font.PLAIN, 1);
+                if (f.canDisplay(c)) return f.deriveFont(size);
+            }
+        }
+        return null;
     }
 
     // ── Rounded border helper ─────────────────────────────────────────────────

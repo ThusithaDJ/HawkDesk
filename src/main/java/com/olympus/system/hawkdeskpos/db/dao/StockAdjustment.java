@@ -18,6 +18,10 @@ public class StockAdjustment {
     @JoinColumn(name = "item_id", nullable = false)
     private Item item;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batch_id")
+    private ItemBatch batchObj;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "adjustment_type", nullable = false)
     private AdjustmentType adjustmentType;
@@ -37,6 +41,9 @@ public class StockAdjustment {
     @Column(name = "notes", length = 512)
     private String notes;
 
+    @Column(name = "reference", length = 100)
+    private String reference;
+
     @Column(name = "loss_value", precision = 12, scale = 2)
     private BigDecimal lossValue;
 
@@ -52,6 +59,8 @@ public class StockAdjustment {
     public Long getId() { return id; }
     public Item getItem() { return item; }
     public void setItem(Item item) { this.item = item; }
+    public ItemBatch getBatchObj() { return batchObj; }
+    public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public AdjustmentType getAdjustmentType() { return adjustmentType; }
     public void setAdjustmentType(AdjustmentType adjustmentType) { this.adjustmentType = adjustmentType; }
     public int getQtyBefore() { return qtyBefore; }
@@ -64,6 +73,8 @@ public class StockAdjustment {
     public void setReason(String reason) { this.reason = reason; }
     public String getNotes() { return notes; }
     public void setNotes(String notes) { this.notes = notes; }
+    public String getReference() { return reference; }
+    public void setReference(String reference) { this.reference = reference; }
     public BigDecimal getLossValue() { return lossValue; }
     public void setLossValue(BigDecimal lossValue) { this.lossValue = lossValue; }
     public Employee getEmployee() { return employee; }

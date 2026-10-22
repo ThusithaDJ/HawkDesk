@@ -25,8 +25,10 @@ public class NavBar extends JPanel {
     private static final Color WHITE_DIM  = new Color(255, 255, 255, 178);
 
     private final JLabel clockLabel;
+    private JLabel shopLabel;
     private final List<NavButton> navButtons = new ArrayList<>();
     private Runnable logoutCallback;
+    private JPanel navCentre;
 
     public record NavItem(String label, String card, Permission requiredPermission) {}
 
@@ -43,7 +45,7 @@ public class NavBar extends JPanel {
         JPanel logo = buildLogoBox();
         left.add(logo);
 
-        JLabel shopLabel = new JLabel("HawkPOS — " + shopName);
+        shopLabel = new JLabel("HawkPOS — " + shopName);
         shopLabel.setFont(shopLabel.getFont().deriveFont(Font.BOLD, 16f));
         shopLabel.setForeground(WHITE);
         left.add(shopLabel);
@@ -51,16 +53,20 @@ public class NavBar extends JPanel {
         add(left, BorderLayout.WEST);
 
         // ── Centre: nav buttons ───────────────────────────────────────────────
-        JPanel centre = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0));
+        navCentre = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0));
+        JPanel centre = navCentre;
         centre.setOpaque(false);
 
         List<NavItem> items = List.of(
-                new NavItem("New Sale",      "NEW_SALE",    Permission.MAKE_SALE),
-                new NavItem("View Stock",    "VIEW_STOCK",  Permission.VIEW_STOCK),
-                new NavItem("Receive Stock", "RECEIVE_STOCK", Permission.RECEIVE_STOCK),
-                new NavItem("Sales History", "SALES_HISTORY", Permission.VIEW_SALES),
-                new NavItem("Reports",       "REPORTS",     Permission.VIEW_REPORTS),
-                new NavItem("Settings",      "SETTINGS",    Permission.ACCESS_SETTINGS)
+                new NavItem("New Sale",        "NEW_SALE",       Permission.MAKE_SALE),
+                new NavItem("View Stock",      "VIEW_STOCK",     Permission.VIEW_STOCK),
+                new NavItem("Receive Stock",   "RECEIVE_STOCK",  Permission.RECEIVE_STOCK),
+                new NavItem("Sales History",   "SALES_HISTORY",  Permission.VIEW_SALES),
+                new NavItem("Credit Invoices", "CREDIT_INVOICES",Permission.VIEW_SALES),
+                new NavItem("Customers",       "CUSTOMERS",      Permission.MAKE_SALE),
+                new NavItem("Returns",         "ALL_RETURNS",    Permission.PROCESS_RETURNS),
+                new NavItem("Reports",         "REPORTS",        Permission.VIEW_REPORTS),
+                new NavItem("Settings",        "SETTINGS",       Permission.ACCESS_SETTINGS)
         );
 
         for (NavItem ni : items) {
@@ -96,6 +102,24 @@ public class NavBar extends JPanel {
         clockLabel.setFont(clockLabel.getFont().deriveFont(13f));
         right.add(clockLabel);
 
+        JButton minimizeBtn = new JButton("—");
+        minimizeBtn.setForeground(WHITE);
+        minimizeBtn.setBackground(new Color(255, 255, 255, 30));
+        minimizeBtn.setOpaque(true);
+        minimizeBtn.setBorderPainted(false);
+        minimizeBtn.setFont(minimizeBtn.getFont().deriveFont(13f));
+        minimizeBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        minimizeBtn.setToolTipText("Minimize");
+        minimizeBtn.addActionListener(e -> {
+            java.awt.Window w = SwingUtilities.getWindowAncestor(NavBar.this);
+            if (w instanceof java.awt.Frame f) f.setState(java.awt.Frame.ICONIFIED);
+        });
+        minimizeBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { minimizeBtn.setBackground(new Color(255,255,255,60)); }
+            @Override public void mouseExited(MouseEvent e)  { minimizeBtn.setBackground(new Color(255,255,255,30)); }
+        });
+        right.add(minimizeBtn);
+
         JButton logoutBtn = new JButton("Log out");
         logoutBtn.setForeground(WHITE);
         logoutBtn.setBackground(new Color(255, 255, 255, 30));
@@ -110,6 +134,25 @@ public class NavBar extends JPanel {
         });
         right.add(logoutBtn);
 
+        JButton exitBtn = new JButton("Exit");
+        exitBtn.setForeground(WHITE);
+        exitBtn.setBackground(new Color(255, 255, 255, 30));
+        exitBtn.setOpaque(true);
+        exitBtn.setBorderPainted(false);
+        exitBtn.setFont(exitBtn.getFont().deriveFont(13f));
+        exitBtn.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        exitBtn.addActionListener(e -> {
+            int res = JOptionPane.showConfirmDialog(null,
+                    "Exit HawkPOS? Any unsaved changes will be lost.",
+                    "Exit", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            if (res == JOptionPane.YES_OPTION) System.exit(0);
+        });
+        exitBtn.addMouseListener(new MouseAdapter() {
+            @Override public void mouseEntered(MouseEvent e) { exitBtn.setBackground(new Color(0xC6, 0x28, 0x28)); }
+            @Override public void mouseExited(MouseEvent e)  { exitBtn.setBackground(new Color(255,255,255,30)); }
+        });
+        right.add(exitBtn);
+
         add(right, BorderLayout.EAST);
 
         // Live clock — updates every 30 seconds
@@ -117,25 +160,49 @@ public class NavBar extends JPanel {
         new Timer(30_000, e -> updateClock()).start();
     }
 
+    /** Called by the plugin system to inject plugin nav buttons after construction. */
+    public void addNavButton(String label, String cardName) {
+        NavButton btn = new NavButton(label, cardName);
+        navButtons.add(btn);
+        navCentre.add(btn);
+        navCentre.revalidate();
+        navCentre.repaint();
+    }
+
     private void updateClock() {
         clockLabel.setText(LocalTime.now().format(DateTimeFormatter.ofPattern("hh:mm a")));
     }
 
     private static JPanel buildLogoBox() {
-        JPanel box = new JPanel() {
-            @Override protected void paintComponent(Graphics g) {
-                Graphics2D g2 = (Graphics2D) g.create();
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                g2.setColor(new Color(255, 255, 255, 38));
-                g2.fillRoundRect(0, 0, getWidth(), getHeight(), 7, 7);
-                g2.dispose();
-                super.paintComponent(g);
-            }
-        };
-        box.setOpaque(false);
-        box.setPreferredSize(new Dimension(28, 28));
-        return box;
+    Image logoImg;
+    try {
+        logoImg = new ImageIcon(
+            NavBar.class.getResource("/images/icons/hawkpos-icon.png")
+        ).getImage().getScaledInstance(20, 20, Image.SCALE_SMOOTH);
+    } catch (Exception e) {
+        logoImg = null;
     }
+
+    final Image img = logoImg;
+
+    JPanel box = new JPanel() {
+        @Override protected void paintComponent(Graphics g) {
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+            g2.setColor(new Color(255, 255, 255, 38));
+            g2.fillRoundRect(0, 0, getWidth(), getHeight(), 7, 7);
+            if (img != null) {
+                int pad = 4;
+                g2.drawImage(img, pad, pad, getWidth() - pad * 2, getHeight() - pad * 2, this);
+            }
+            g2.dispose();
+            super.paintComponent(g);
+        }
+    };
+    box.setOpaque(false);
+    box.setPreferredSize(new Dimension(28, 28));
+    return box;
+}
 
     private static String roleLabel(String role) {
         return switch (role) {
@@ -144,6 +211,10 @@ public class NavBar extends JPanel {
             case "STOCK_KEEPER" -> "Stock Keeper";
             default             -> "Cashier";
         };
+    }
+
+    public void updateShopName(String name) {
+        shopLabel.setText("HawkPOS — " + name);
     }
 
     // ── Nav button component ──────────────────────────────────────────────────

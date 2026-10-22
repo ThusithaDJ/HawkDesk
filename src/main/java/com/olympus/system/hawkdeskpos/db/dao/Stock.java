@@ -26,17 +26,28 @@ public class Stock implements Serializable {
     @Column(name = "batch", length = 45)
     private String batch;
 
+    @Column(name = "sku", length = 45)
+    private String sku;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "variant_id")
+    private ItemVariant variant;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "batch_id")
+    private ItemBatch batchObj;
+
     @Temporal(TemporalType.DATE)
     @Column(name = "expire_date")
     private Date expireDate;
 
-    @Column(name = "qty")
-    private Integer qty;
+    @Column(name = "qty", columnDefinition = "DECIMAL")
+    private Double qty;
 
-    @Column(name = "cost")
+    @Column(name = "cost", columnDefinition = "DECIMAL")
     private Double cost;
 
-    @Column(name = "price")
+    @Column(name = "price", columnDefinition = "DECIMAL")
     private Double price;
 
     @Column(name = "stat", length = 45)
@@ -59,10 +70,16 @@ public class Stock implements Serializable {
     public void setGrninfo(Grninfo grninfo) { this.grninfo = grninfo; }
     public String getBatch() { return batch; }
     public void setBatch(String batch) { this.batch = batch; }
+    public String getSku() { return sku; }
+    public void setSku(String sku) { this.sku = sku; }
+    public ItemVariant getVariant() { return variant; }
+    public void setVariant(ItemVariant variant) { this.variant = variant; }
+    public ItemBatch getBatchObj() { return batchObj; }
+    public void setBatchObj(ItemBatch batchObj) { this.batchObj = batchObj; }
     public Date getExpireDate() { return expireDate; }
     public void setExpireDate(Date expireDate) { this.expireDate = expireDate; }
-    public Integer getQty() { return qty; }
-    public void setQty(Integer qty) { this.qty = qty; }
+    public Double getQty() { return qty; }
+    public void setQty(Double qty) { this.qty = qty; }
     public Double getCost() { return cost; }
     public void setCost(Double cost) { this.cost = cost; }
     public Double getPrice() { return price; }

@@ -833,7 +833,7 @@ public class AddStock extends javax.swing.JInternalFrame {
                 stock.setItem(itm);
                 stock.setBatch(batchNo);
                 stock.setExpireDate(expireDate);
-                stock.setQty(qty);
+                stock.setQty((double) qty);
                 stock.setCost(cost);
                 stock.setPrice(price);
                 stock.setStat("available");

@@ -1,18 +1,34 @@
 package com.olympus.system.hawkdeskpos.frontend;
 
+import com.olympus.system.hawkdeskpos.db.dao.CashAccount;
 import com.olympus.system.hawkdeskpos.db.util.Controller;
+import com.olympus.system.hawkdeskpos.dto.CustomerDto;
+import com.olympus.system.hawkdeskpos.dto.ItemDto;
 import com.olympus.system.hawkdeskpos.frontend.admin.*;
 import com.olympus.system.hawkdeskpos.frontend.components.NavBar;
+import com.olympus.system.hawkdeskpos.frontend.components.Refreshable;
+import com.olympus.system.hawkdeskpos.frontend.finance.CashAccountPanel;
+import com.olympus.system.hawkdeskpos.frontend.finance.CashflowPanel;
 import com.olympus.system.hawkdeskpos.frontend.finance.GrnHistoryPanel;
 import com.olympus.system.hawkdeskpos.frontend.reports.ReportsPanel;
 import com.olympus.system.hawkdeskpos.frontend.sale.*;
+import com.olympus.system.hawkdeskpos.service.CashAccountService;
+import com.olympus.system.hawkdeskpos.service.CustomerService;
 import com.olympus.system.hawkdeskpos.frontend.stock.*;
 import com.olympus.system.hawkdeskpos.service.*;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import com.olympus.system.hawkdeskpos.plugin.PluginContext;
+import com.olympus.system.hawkdeskpos.plugin.PluginLoader;
+import com.olympus.system.hawkdeskpos.plugin.PluginRegistry;
 import com.olympus.system.hawkdeskpos.session.SessionContext;
 import org.hibernate.SessionFactory;
 
 import javax.swing.*;
 import java.awt.*;
+import java.io.File;
+import java.util.function.Supplier;
 
 /**
  * Main application window — undecorated, always maximised, CardLayout host.
@@ -41,7 +57,13 @@ public class Home extends JFrame {
     public static final String CARD_USERS     = "USER_MGMT";
     public static final String CARD_SETTINGS  = "SETTINGS";
     public static final String CARD_BACKUP    = "BACKUP";
-    public static final String CARD_GRN_HIST  = "GRN_HISTORY";
+    public static final String CARD_GRN_HIST       = "GRN_HISTORY";
+    public static final String CARD_RETURNS_LIST   = "ALL_RETURNS";
+    public static final String CARD_CUSTOMERS      = "CUSTOMERS";
+    public static final String CARD_CREDIT_INVOICES = "CREDIT_INVOICES";
+    public static final String CARD_CASHFLOW          = "CASHFLOW";
+    public static final String CARD_CUSTOMER_DETAILS  = "CUSTOMER_DETAILS";
+    public static final String CARD_CASH_ACCOUNTS     = "CASH_ACCOUNTS";
 
     // ── Backward-compat shims (referenced by old compiled classes) ────────────
     /** @deprecated No longer used; kept for compile compatibility only. */
@@ -75,7 +97,16 @@ public class Home extends JFrame {
     private final ReturnService   returnService;
     private final ReportService   reportService;
     private final BackupService   backupService;
-    private final SettingsService settingsService;
+    private final SettingsService  settingsService;
+    private final CustomerService  customerService;
+    private final UomService       uomService;
+    private final CashAccountService cashAccountService;
+
+    private final ScheduledExecutorService expiryTimer = Executors.newSingleThreadScheduledExecutor(r -> {
+        Thread t = new Thread(r, "batch-expiry-checker");
+        t.setDaemon(true);
+        return t;
+    });
 
     private NavBar navBar;
 
@@ -94,6 +125,30 @@ public class Home extends JFrame {
         reportService   = new ReportService(sf);
         settingsService = new SettingsService(sf);
         backupService   = new BackupService(sf, settingsService);
+        backupService.startAutoBackupScheduler();
+        customerService     = new CustomerService(sf);
+        uomService          = new UomService(sf);
+        cashAccountService  = new CashAccountService(sf, settingsService);
+        cashAccountService.ensureCashDrawerExists();
+
+        // Load plugins from the plugins/ directory
+        PluginLoader.loadAll(PluginLoader.resolvePluginsDir(), new PluginContext() {
+            @Override
+            public void registerPanel(String cardName, Supplier<JPanel> factory) {
+                PluginRegistry.getInstance().registerPanel(new PluginRegistry.PanelEntry(cardName, factory));
+            }
+            @Override
+            public void addNavItem(String label, String cardName) {
+                PluginRegistry.getInstance().registerNav(new PluginRegistry.NavEntry(label, cardName));
+            }
+            @Override
+            public org.hibernate.SessionFactory getSessionFactory() { return sf; }
+        });
+
+        // Run expiry check immediately, then every 6 hours
+        expiryTimer.scheduleAtFixedRate(
+                () -> stockService.getBatchService().markExpiredBatches(),
+                0, 6, TimeUnit.HOURS);
 
         setUndecorated(true);
         setExtendedState(JFrame.MAXIMIZED_BOTH);
@@ -107,37 +162,87 @@ public class Home extends JFrame {
 
         registerCards();
         cardLayout.show(cardHost, CARD_LOGIN);
+        
+        ImageIcon icon = new ImageIcon(
+                getClass().getResource("/images/icons/hawkpos-icon.png")
+        );
+        setIconImage(icon.getImage());
     }
 
     private void registerCards() {
-        cardHost.add(new LoginPanel(authService, auditService, this::onLoginSuccess), CARD_LOGIN);
-        cardHost.add(new DashboardPanel(itemService, saleService, settingsService), CARD_DASH);
-        cardHost.add(new NewSalePanel(itemService, saleService, settingsService), CARD_SALE);
-        cardHost.add(new ViewStockPanel(itemService, categoryService), CARD_STOCK);
-        cardHost.add(new AddItemPanel(itemService, categoryService), CARD_ADD_ITEM);
-        cardHost.add(new EditItemPanel(itemService, categoryService), CARD_EDIT_ITEM);
-        cardHost.add(new ReceiveStockPanel(itemService, stockService, settingsService), CARD_RECEIVE);
+        cardHost.add(new LoginPanel(authService, auditService, this::onLoginSuccess, settingsService), CARD_LOGIN);
+        cardHost.add(new DashboardPanel(itemService, saleService, settingsService, reportService), CARD_DASH);
+        cardHost.add(new NewSalePanel(itemService, saleService, settingsService, customerService, cashAccountService, returnService), CARD_SALE);
+        cardHost.add(new ViewStockPanel(itemService, categoryService, stockService), CARD_STOCK);
+        cardHost.add(new AddItemPanel(itemService, categoryService, uomService), CARD_ADD_ITEM);
+        cardHost.add(new EditItemPanel(itemService, categoryService, uomService), CARD_EDIT_ITEM);
+        cardHost.add(new ReceiveStockPanel(itemService, stockService, settingsService, cashAccountService, returnService), CARD_RECEIVE);
         cardHost.add(new LowStockPanel(itemService, reportService), CARD_LOW_STOCK);
-        cardHost.add(new SalesHistoryPanel(saleService), CARD_HIST);
-        cardHost.add(new FindInvoicePanel(saleService), CARD_FIND_INV);
-        cardHost.add(new GoodsReturnPanel(saleService, returnService), CARD_RETURNS);
+        cardHost.add(new SalesHistoryPanel(saleService, returnService), CARD_HIST);
+        cardHost.add(new FindInvoicePanel(saleService, returnService), CARD_FIND_INV);
+        cardHost.add(new GoodsReturnPanel(saleService, returnService, settingsService, cashAccountService, customerService), CARD_RETURNS);
+        cardHost.add(new ReturnsPanel(returnService), CARD_RETURNS_LIST);
         cardHost.add(new StockAdjustmentPanel(itemService, stockService), CARD_ADJUST);
         cardHost.add(new ReportsPanel(reportService, settingsService), CARD_REPORTS);
         cardHost.add(new ManageCategoriesPanel(categoryService), CARD_CATS);
         cardHost.add(new UserManagementPanel(userService), CARD_USERS);
-        cardHost.add(new SettingsPanel(settingsService), CARD_SETTINGS);
+        cardHost.add(new SettingsPanel(settingsService, authService, sf, cashAccountService, backupService), CARD_SETTINGS);
         cardHost.add(new BackupPanel(backupService), CARD_BACKUP);
         cardHost.add(new GrnHistoryPanel(stockService), CARD_GRN_HIST);
+        cardHost.add(new CustomerPanel(customerService, saleService), CARD_CUSTOMERS);
+        cardHost.add(new CreditInvoicesPanel(saleService, cashAccountService), CARD_CREDIT_INVOICES);
+        cardHost.add(new CashflowPanel(reportService, settingsService, saleService, cashAccountService, stockService), CARD_CASHFLOW);
+        cardHost.add(new CustomerDetailsPanel(saleService, customerService), CARD_CUSTOMER_DETAILS);
+        cardHost.add(new CashAccountPanel(cashAccountService), CARD_CASH_ACCOUNTS);
+
+        // Plugin-contributed panels
+        for (PluginRegistry.PanelEntry pe : PluginRegistry.getInstance().getPanels()) {
+            cardHost.add(pe.factory().get(), pe.cardName());
+        }
     }
 
     private void onLoginSuccess() {
         if (navBar != null) rootPanel.remove(navBar);
         navBar = new NavBar(settingsService.shopName(), this::onLogout);
+        for (PluginRegistry.NavEntry nav : PluginRegistry.getInstance().getNavItems()) {
+            navBar.addNavButton(nav.label(), nav.cardName());
+        }
         wireNavButtons(navBar);
         rootPanel.add(navBar, BorderLayout.NORTH);
         rootPanel.revalidate();
         rootPanel.repaint();
         navigate(CARD_DASH);
+        checkCashDrawerBalance();
+    }
+
+    private void checkCashDrawerBalance() {
+        new SwingWorker<CashAccount, Void>() {
+            @Override protected CashAccount doInBackground() {
+                return cashAccountService.getCashDrawer();
+            }
+            @Override protected void done() {
+                try {
+                    CashAccount drawer = get();
+                    if (drawer == null || Math.abs(drawer.getBalance()) >= 0.001) return;
+                    int choice = JOptionPane.showConfirmDialog(Home.this,
+                            "<html><b>" + drawer.getName() + "</b> (Cash Drawer) balance is Rs. 0.00.<br>" +
+                            "Do you want to set an opening balance?</html>",
+                            "Cash Drawer Balance", JOptionPane.YES_NO_OPTION, JOptionPane.QUESTION_MESSAGE);
+                    if (choice != JOptionPane.YES_OPTION) return;
+                    String input = JOptionPane.showInputDialog(Home.this,
+                            "Enter opening balance for " + drawer.getName() + ":",
+                            "Set Opening Balance", JOptionPane.PLAIN_MESSAGE);
+                    if (input == null || input.trim().isEmpty()) return;
+                    try {
+                        double amount = Double.parseDouble(input.trim());
+                        if (amount > 0) cashAccountService.adjustBalance(drawer.getId(), amount, "Opening Balance", null);
+                    } catch (NumberFormatException ex) {
+                        JOptionPane.showMessageDialog(Home.this, "Invalid amount entered.",
+                                "Error", JOptionPane.ERROR_MESSAGE);
+                    }
+                } catch (Exception ignored) {}
+            }
+        }.execute();
     }
 
     private void wireNavButtons(Container container) {
@@ -165,7 +270,11 @@ public class Home extends JFrame {
     // ── Static navigation API ─────────────────────────────────────────────────
 
     public static void navigate(String card) {
-        if (instance != null) instance.cardLayout.show(instance.cardHost, card);
+        if (instance == null) return;
+        instance.cardLayout.show(instance.cardHost, card);
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c.isVisible() && c instanceof Refreshable r) { r.refresh(); break; }
+        }
     }
 
     public static void navigateToEditItem(int itemId) {
@@ -174,6 +283,59 @@ public class Home extends JFrame {
             if (c instanceof EditItemPanel eip) { eip.loadItem(itemId); break; }
         }
         navigate(CARD_EDIT_ITEM);
+    }
+
+    public static void navigateToNewSaleWithItem(ItemDto item) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof NewSalePanel nsp) { nsp.addItemDirectly(item); break; }
+        }
+        navigate(CARD_SALE);
+    }
+
+    public static void navigateToReceiveStockWithItem(ItemDto item) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof ReceiveStockPanel rsp) { rsp.preload(item); break; }
+        }
+        navigate(CARD_RECEIVE);
+    }
+
+    public static void navigateToReceiveStockWithItems(java.util.List<ItemDto> items) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof ReceiveStockPanel rsp) { rsp.preloadMultiple(items); break; }
+        }
+        navigate(CARD_RECEIVE);
+    }
+
+    public static void refreshNavBarShopName(String shopName) {
+        if (instance == null || instance.navBar == null) return;
+        instance.navBar.updateShopName(shopName);
+    }
+
+    public static void navigateToCustomerDetails(CustomerDto customer) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof CustomerDetailsPanel cdp) { cdp.setCustomer(customer); break; }
+        }
+        navigate(CARD_CUSTOMER_DETAILS);
+    }
+
+    public static void navigateToFindInvoice(String invoiceNo) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof FindInvoicePanel fip) { fip.searchForInvoice(invoiceNo); break; }
+        }
+        navigate(CARD_FIND_INV);
+    }
+
+    public static void navigateToReturnWithInvoice(String invoiceNo) {
+        if (instance == null) return;
+        for (Component c : instance.cardHost.getComponents()) {
+            if (c instanceof GoodsReturnPanel grp) { grp.loadInvoice(invoiceNo); break; }
+        }
+        navigate(CARD_RETURNS);
     }
 
     // ── Accessors ─────────────────────────────────────────────────────────────
@@ -187,4 +349,5 @@ public class Home extends JFrame {
     public ReportService   reports()         { return reportService;   }
     public BackupService   backup()          { return backupService;   }
     public SettingsService settings()        { return settingsService; }
+    public CustomerService customers()       { return customerService; }
 }

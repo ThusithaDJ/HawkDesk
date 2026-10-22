@@ -47,7 +47,8 @@ public class UserService {
                     p.isCanEditItem(), p.isCanReceiveStock(), p.isCanAdjustStock(),
                     p.isCanManageCategories(), p.isCanDeleteCategories(),
                     p.isCanViewReports(), p.isCanExportReports(), p.isCanViewGrn(),
-                    p.isCanAccessSettings(), p.isCanManageUsers(), p.isCanAccessBackup());
+                    p.isCanAccessSettings(), p.isCanManageUsers(), p.isCanAccessBackup(),
+                    p.isCanViewBatchCost(), p.isCanOverrideFifo());
         }
     }
 
@@ -125,6 +126,8 @@ public class UserService {
             p.setCanAccessSettings(dto.canAccessSettings());
             p.setCanManageUsers(dto.canManageUsers());
             p.setCanAccessBackup(dto.canAccessBackup());
+            p.setCanViewBatchCost(dto.canViewBatchCost());
+            p.setCanOverrideFifo(dto.canOverrideFifo());
             session.merge(p);
             tx.commit();
             audit.log(AuditLog.Action.UPDATE, "user_permissions", dto.employeeId(),

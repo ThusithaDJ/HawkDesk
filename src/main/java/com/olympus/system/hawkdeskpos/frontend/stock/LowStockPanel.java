@@ -1,5 +1,6 @@
 package com.olympus.system.hawkdeskpos.frontend.stock;
 
+import com.olympus.system.hawkdeskpos.dto.ItemDto;
 import com.olympus.system.hawkdeskpos.dto.StockLevelDto;
 import com.olympus.system.hawkdeskpos.frontend.Home;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
@@ -17,7 +18,7 @@ import java.util.stream.Collectors;
  * Low Stock Alerts screen.
  * Shows out/low counts; checkable item list; suggests order quantities.
  */
-public class LowStockPanel extends JPanel {
+public class LowStockPanel extends JPanel implements com.olympus.system.hawkdeskpos.frontend.components.Refreshable {
 
     private static final Color BG    = new Color(0xF0, 0xF2, 0xF5);
     private static final Color TEXT2 = new Color(0x5A, 0x60, 0x70);
@@ -110,7 +111,24 @@ public class LowStockPanel extends JPanel {
         goReceive.setForeground(Color.WHITE);
         goReceive.setOpaque(true);
         goReceive.setBorderPainted(false);
-        goReceive.addActionListener(e -> Home.navigate(Home.CARD_RECEIVE));
+        goReceive.addActionListener(e -> {
+            List<ItemDto> selected = new ArrayList<>();
+            for (int i = 0; i < checkBoxes.size(); i++) {
+                if (checkBoxes.get(i).isSelected() && i < items.size()) {
+                    StockLevelDto d = items.get(i);
+                    selected.add(new ItemDto(d.itemId(), d.itemName(), d.sku(),
+                            d.categoryName(), d.brandName(), "", d.stat(),
+                            d.totalQty(), d.minLevel(), d.maxLevel(),
+                            d.costPrice(), d.sellingPrice(), 0, "", null, 1.0, 0));
+                }
+            }
+            if (selected.isEmpty()) {
+                JOptionPane.showMessageDialog(LowStockPanel.this,
+                        "Select at least one item first.", "No Selection", JOptionPane.WARNING_MESSAGE);
+                return;
+            }
+            Home.navigateToReceiveStockWithItems(selected);
+        });
         actionRow.add(selectAll);
         actionRow.add(clearAll);
         actionRow.add(goReceive);
@@ -158,7 +176,9 @@ public class LowStockPanel extends JPanel {
                     items = get();
                     populateList();
                     updateStats();
-                } catch (Exception ignored) {}
+                } catch (Exception e) {
+                    System.err.println("LowStockPanel.loadDataAsync: " + e.getMessage());
+                }
             }
         }.execute();
     }
@@ -201,11 +221,14 @@ public class LowStockPanel extends JPanel {
         JLabel name = new JLabel(d.itemName());
         name.setFont(name.getFont().deriveFont(Font.BOLD, 13f));
 
-        JLabel stock = new JLabel(d.totalQty() + " / " + d.minLevel() + " min");
+        String qtyStr = d.totalQty() == Math.floor(d.totalQty())
+                ? String.valueOf((long) d.totalQty())
+                : String.format("%.4f", d.totalQty()).replaceAll("0+$", "").replaceAll("\\.$", "");
+        JLabel stock = new JLabel(qtyStr + " / " + d.minLevel() + " min");
         stock.setForeground(TEXT2);
 
         // Suggested order: 3× min level - current qty, at least 1
-        int suggested = Math.max(1, d.minLevel() * 3 - d.totalQty());
+        int suggested = (int) Math.max(1.0, d.minLevel() * 3.0 - d.totalQty());
         JSpinner spinner = new JSpinner(new SpinnerNumberModel(suggested, 1, 99999, 1));
         orderSpinners.add(spinner);
 

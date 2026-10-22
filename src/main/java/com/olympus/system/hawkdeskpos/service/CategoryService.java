@@ -58,12 +58,17 @@ public class CategoryService {
     }
 
     public void renameCategory(int catId, String newName, Long employeeId) {
+        renameCategory(catId, newName, null, employeeId);
+    }
+
+    public void renameCategory(int catId, String newName, String colour, Long employeeId) {
         try (var session = sf.openSession()) {
             Transaction tx = session.beginTransaction();
             Category cat = session.get(Category.class, catId);
             if (cat == null) { tx.rollback(); return; }
             String old = cat.getCategoryName();
             cat.setCategoryName(newName);
+            if (colour != null) cat.setColour(colour);
             session.merge(cat);
             tx.commit();
             audit.log(AuditLog.Action.UPDATE, "category", (long) catId,
