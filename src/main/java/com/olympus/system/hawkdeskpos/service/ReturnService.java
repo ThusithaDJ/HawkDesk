@@ -44,6 +44,28 @@ public class ReturnService {
             Customer customer = customerId != null ? session.get(Customer.class, customerId) : null;
             Date now = new Date();
 
+            // Query sold and previously-returned quantities BEFORE persisting new returns.
+            // Hibernate auto-flushes dirty entities before JPQL queries on the same table,
+            // so querying after persist would include the new returns in prevRetLines and
+            // the explicit merge below would double-count them.
+            List<Object[]> soldLines = session.createQuery(
+                    "SELECT i.stock.stockId, i.qty FROM Invoice i WHERE i.invoiceinfo.invoiceNo = :no",
+                    Object[].class)
+                    .setParameter("no", invoiceNo).list();
+
+            List<Object[]> prevRetLines = session.createQuery(
+                    "SELECT r.stock.stockId, SUM(r.qty) FROM Return r " +
+                    "WHERE r.invoiceinfo.invoiceNo = :no GROUP BY r.stock.stockId",
+                    Object[].class)
+                    .setParameter("no", invoiceNo).list();
+
+            Map<Integer, Double> soldMap     = new HashMap<>();
+            Map<Integer, Double> returnedMap = new HashMap<>();
+            for (Object[] row : soldLines)    soldMap.put((Integer) row[0], ((Number) row[1]).doubleValue());
+            for (Object[] row : prevRetLines) returnedMap.put((Integer) row[0], ((Number) row[1]).doubleValue());
+            for (Map.Entry<Integer, Double> e : returnLines.entrySet())
+                returnedMap.merge(e.getKey(), e.getValue(), Double::sum);
+
             for (Map.Entry<Integer, Double> entry : returnLines.entrySet()) {
                 int    stockId = entry.getKey();
                 double qty     = entry.getValue();
@@ -66,7 +88,7 @@ public class ReturnService {
 
                 Return ret = new Return();
                 ret.setInvoiceinfo(ii);
-                ret.setQty(qty);  // Double — decimal primary-unit quantity
+                ret.setQty(qty);
                 ret.setReason(reason);
                 ret.setReturnTo(refundMethod);
                 ret.setStat(refundMethod);
@@ -83,33 +105,11 @@ public class ReturnService {
             if ("Void".equals(refundMethod)) {
                 ii.setStat("Void");
                 session.merge(ii);
-            } else {
-                // Per-item (per stock) comparison — Full Return only when every line is fully returned
-                List<Object[]> soldLines = session.createQuery(
-                        "SELECT i.stock.stockId, i.qty FROM Invoice i WHERE i.invoiceinfo.invoiceNo = :no",
-                        Object[].class)
-                        .setParameter("no", invoiceNo).list();
-
-                List<Object[]> prevRetLines = session.createQuery(
-                        "SELECT r.stock.stockId, SUM(r.qty) FROM Return r " +
-                        "WHERE r.invoiceinfo.invoiceNo = :no GROUP BY r.stock.stockId",
-                        Object[].class)
-                        .setParameter("no", invoiceNo).list();
-
-                Map<Integer, Double> soldMap     = new HashMap<>();
-                Map<Integer, Double> returnedMap = new HashMap<>();
-                for (Object[] row : soldLines)    soldMap.put((Integer) row[0], ((Number) row[1]).doubleValue());
-                for (Object[] row : prevRetLines) returnedMap.put((Integer) row[0], ((Number) row[1]).doubleValue());
-                // Merge current batch of returns
-                for (Map.Entry<Integer, Double> e : returnLines.entrySet())
-                    returnedMap.merge(e.getKey(), e.getValue(), Double::sum);
-
-                if (!soldMap.isEmpty()) {
-                    boolean fullReturn = soldMap.entrySet().stream().allMatch(
-                            e -> returnedMap.getOrDefault(e.getKey(), 0.0) >= e.getValue() - 0.001);
-                    ii.setStat(fullReturn ? "Full Return" : "Partial Return");
-                    session.merge(ii);
-                }
+            } else if (!soldMap.isEmpty()) {
+                boolean fullReturn = soldMap.entrySet().stream().allMatch(
+                        e -> returnedMap.getOrDefault(e.getKey(), 0.0) >= e.getValue() - 0.001);
+                ii.setStat(fullReturn ? "Full Return" : "Partial Return");
+                session.merge(ii);
             }
 
             tx.commit();
@@ -240,6 +240,75 @@ public class ReturnService {
             return unitSell * (ret.getQty() != null ? ret.getQty() : 0);
         } catch (Exception e) {
             return 0;
+        }
+    }
+
+    /**
+     * For a list of invoice numbers, returns the profit (sale_price − cost) × qty
+     * of items that were returned AND had a cash refund (RETURN_REFUND transaction).
+     * Used by SalesHistoryPanel to deduct partial-return profit from tiles.
+     */
+    public Map<String, Double> getCashRefundedProfitByInvoice(List<String> invoiceNos) {
+        if (invoiceNos == null || invoiceNos.isEmpty()) return Collections.emptyMap();
+        try (var session = sf.openSession()) {
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = session.createNativeQuery(
+                    "SELECT r.invoice_no, " +
+                    "  COALESCE(SUM(r.qty * (inv.sub_total / NULLIF(inv.qty, 0) - COALESCE(inv.cost_price, s.cost, 0))), 0) " +
+                    "FROM `return` r " +
+                    "JOIN invoice inv ON inv.invoice_no = r.invoice_no AND inv.stock_id = r.stock_id " +
+                    "LEFT JOIN stock s ON s.stock_id = r.stock_id " +
+                    "WHERE r.invoice_no IN :nos " +
+                    "AND EXISTS (SELECT 1 FROM cash_transaction ct " +
+                    "            WHERE ct.reference = r.invoice_no AND ct.type = 'RETURN_REFUND') " +
+                    "GROUP BY r.invoice_no",
+                    Object[].class)
+                    .setParameterList("nos", invoiceNos)
+                    .list();
+            Map<String, Double> map = new HashMap<>();
+            for (Object[] row : rows) {
+                if (row[0] != null)
+                    map.put(row[0].toString(), row[1] instanceof Number n ? n.doubleValue() : 0.0);
+            }
+            return map;
+        } catch (Exception e) {
+            System.err.println("ReturnService.getCashRefundedProfitByInvoice: " + e.getMessage());
+            return Collections.emptyMap();
+        }
+    }
+
+    /**
+     * For a list of invoice numbers, returns the exact returned qty and sale amount per invoice.
+     * Result map: invoiceNo → double[]{totalReturnedQty, totalReturnedSaleAmount}
+     * Sale amount = r.qty × (inv.sub_total / inv.qty) — the selling price of the returned units.
+     */
+    public Map<String, double[]> getReturnQtyAndAmountByInvoice(List<String> invoiceNos) {
+        if (invoiceNos == null || invoiceNos.isEmpty()) return Collections.emptyMap();
+        try (var session = sf.openSession()) {
+            @SuppressWarnings("unchecked")
+            List<Object[]> rows = session.createNativeQuery(
+                    "SELECT r.invoice_no, " +
+                    "       COALESCE(SUM(r.qty), 0), " +
+                    "       COALESCE(SUM(r.qty * (inv.sub_total / NULLIF(inv.qty, 0))), 0) " +
+                    "FROM `return` r " +
+                    "JOIN invoice inv ON inv.invoice_no = r.invoice_no AND inv.stock_id = r.stock_id " +
+                    "WHERE r.invoice_no IN :nos " +
+                    "GROUP BY r.invoice_no",
+                    Object[].class)
+                    .setParameterList("nos", invoiceNos)
+                    .list();
+            Map<String, double[]> map = new HashMap<>();
+            for (Object[] row : rows) {
+                if (row[0] != null) {
+                    double qty    = row[1] instanceof Number n ? n.doubleValue() : 0.0;
+                    double amount = row[2] instanceof Number n ? n.doubleValue() : 0.0;
+                    map.put(row[0].toString(), new double[]{qty, amount});
+                }
+            }
+            return map;
+        } catch (Exception e) {
+            System.err.println("ReturnService.getReturnQtyAndAmountByInvoice: " + e.getMessage());
+            return Collections.emptyMap();
         }
     }
 

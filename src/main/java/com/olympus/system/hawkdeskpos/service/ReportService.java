@@ -190,7 +190,10 @@ public class ReportService {
         double creditOutstanding, // all-time outstanding balance
         long grnCount, double grnCost,
         double discountGiven,     // total discounts given to customers in period
-        double cashRefunded       // total cash refunds paid to customers in period
+        double cashRefunded,      // total cash refunds paid to customers in period
+        double cogs,              // cost of goods sold from invoice lines
+        double returnedItemProfit,// profit lost on cash-refunded returns
+        double expenses           // manual expenses (type=EXPENSE in cash_transaction)
     ) {}
 
     /**
@@ -255,19 +258,49 @@ public class ReportService {
                     "WHERE transaction_date BETWEEN :from AND :to AND type = 'RETURN_REFUND'",
                     Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
 
+            // COGS for net-profit calculation (mirrors SalesHistory panel formula)
+            Object cfCogsObj = session.createNativeQuery(
+                    "SELECT COALESCE(SUM(inv.qty * COALESCE(inv.cost_price, s.cost, 0)), 0) " +
+                    "FROM invoice inv " +
+                    "JOIN invoiceinfo ii ON inv.invoice_no = ii.invoice_no " +
+                    "LEFT JOIN stock s ON inv.stock_id = s.stock_id " +
+                    "WHERE ii.date BETWEEN :from AND :to AND ii.stat != 'Void'",
+                    Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
+
+            // Profit lost on cash-refunded returns
+            Object cfRetProfObj = session.createNativeQuery(
+                    "SELECT COALESCE(SUM(r.qty * " +
+                    "  (inv.sub_total / NULLIF(inv.qty, 0) - COALESCE(inv.cost_price, s.cost, 0))), 0) " +
+                    "FROM `return` r " +
+                    "JOIN invoice inv ON inv.invoice_no = r.invoice_no AND inv.stock_id = r.stock_id " +
+                    "LEFT JOIN stock s ON s.stock_id = r.stock_id " +
+                    "JOIN (SELECT DISTINCT reference FROM cash_transaction " +
+                    "      WHERE type = 'RETURN_REFUND') ct ON ct.reference = r.invoice_no " +
+                    "WHERE r.return_date BETWEEN :from AND :to",
+                    Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
+
+            // Expenses (manual only — excludes GRN and return-refund entries)
+            Object cfExpObj = session.createNativeQuery(
+                    "SELECT COALESCE(SUM(amount), 0) FROM cash_transaction " +
+                    "WHERE transaction_date BETWEEN :from AND :to AND type = 'EXPENSE'",
+                    Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
+
             return new CashflowData(cash, card, cheque, creditIssued,
-                    collObj   instanceof Number n ? n.doubleValue() : 0,
-                    outObj    instanceof Number n ? n.doubleValue() : 0,
+                    collObj      instanceof Number n ? n.doubleValue() : 0,
+                    outObj       instanceof Number n ? n.doubleValue() : 0,
                     grnRow != null && grnRow[0] instanceof Number n ? n.longValue()   : 0,
                     grnRow != null && grnRow[1] instanceof Number n ? n.doubleValue() : 0,
-                    discObj   instanceof Number n ? n.doubleValue() : 0,
-                    refundObj instanceof Number n ? n.doubleValue() : 0);
+                    discObj      instanceof Number n ? n.doubleValue() : 0,
+                    refundObj    instanceof Number n ? n.doubleValue() : 0,
+                    cfCogsObj    instanceof Number n ? n.doubleValue() : 0,
+                    cfRetProfObj instanceof Number n ? n.doubleValue() : 0,
+                    cfExpObj     instanceof Number n ? n.doubleValue() : 0);
         } catch (Exception e) {
             System.err.println("ReportService.getCashflowData: " + e.getMessage());
             return new CashflowData(
                     new PayMethodStats(0, 0), new PayMethodStats(0, 0),
                     new PayMethodStats(0, 0), new PayMethodStats(0, 0),
-                    0, 0, 0, 0, 0, 0);
+                    0, 0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 
@@ -425,7 +458,8 @@ public class ReportService {
     // ── Finance summary ───────────────────────────────────────────────────────
 
     public record FinanceSummary(double salesRevenue, double otherIncome, double expenses,
-                                  double grnCost, double discountGiven, double refundsGiven) {}
+                                  double grnCost, double discountGiven, double refundsGiven,
+                                  double returnedItemProfit, double cogs) {}
 
     public FinanceSummary getFinanceSummary(Date from, Date to) {
         try (var session = sf.openSession()) {
@@ -437,9 +471,11 @@ public class ReportService {
                     "SELECT COALESCE(SUM(amount), 0) FROM income " +
                     "WHERE transaction_date BETWEEN :from AND :to",
                     Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
+            // Use cash_transaction (type=EXPENSE only) so that GRN payments (type=GRN)
+            // and return refunds (type=RETURN_REFUND) are not double-counted here.
             Object expObj  = session.createNativeQuery(
-                    "SELECT COALESCE(SUM(amount), 0) FROM expense " +
-                    "WHERE transaction_date BETWEEN :from AND :to",
+                    "SELECT COALESCE(SUM(amount), 0) FROM cash_transaction " +
+                    "WHERE transaction_date BETWEEN :from AND :to AND type = 'EXPENSE'",
                     Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
             Object grnObj  = session.createNativeQuery(
                     "SELECT COALESCE(SUM(sub_total), 0) FROM grninfo " +
@@ -453,16 +489,39 @@ public class ReportService {
                     "SELECT COALESCE(SUM(amount), 0) FROM cash_transaction " +
                     "WHERE transaction_date BETWEEN :from AND :to AND type = 'RETURN_REFUND'",
                     Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
+            // Profit recovered/lost on items returned with a cash refund:
+            // unit profit = (sub_total / qty) - cost_price; multiply by returned qty.
+            // Joins cash_transaction to identify invoices that had RETURN_REFUND transactions.
+            Object retProfObj = session.createNativeQuery(
+                    "SELECT COALESCE(SUM(r.qty * " +
+                    "  (inv.sub_total / NULLIF(inv.qty, 0) - COALESCE(inv.cost_price, s.cost, 0))), 0) " +
+                    "FROM `return` r " +
+                    "JOIN invoice inv ON inv.invoice_no = r.invoice_no AND inv.stock_id = r.stock_id " +
+                    "LEFT JOIN stock s ON s.stock_id = r.stock_id " +
+                    "JOIN (SELECT DISTINCT reference FROM cash_transaction " +
+                    "      WHERE type = 'RETURN_REFUND') ct ON ct.reference = r.invoice_no " +
+                    "WHERE r.return_date BETWEEN :from AND :to",
+                    Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
+            // Cost of goods sold — sum of (qty × cost_price) across all non-void invoice lines.
+            Object cogsObj = session.createNativeQuery(
+                    "SELECT COALESCE(SUM(inv.qty * COALESCE(inv.cost_price, s.cost, 0)), 0) " +
+                    "FROM invoice inv " +
+                    "JOIN invoiceinfo ii ON inv.invoice_no = ii.invoice_no " +
+                    "LEFT JOIN stock s ON inv.stock_id = s.stock_id " +
+                    "WHERE ii.date BETWEEN :from AND :to AND ii.stat != 'Void'",
+                    Object.class).setParameter("from", from).setParameter("to", to).uniqueResult();
             return new FinanceSummary(
-                    revObj  instanceof Number n ? n.doubleValue() : 0,
-                    incObj  instanceof Number n ? n.doubleValue() : 0,
-                    expObj  instanceof Number n ? n.doubleValue() : 0,
-                    grnObj  instanceof Number n ? n.doubleValue() : 0,
-                    discObj instanceof Number n ? n.doubleValue() : 0,
-                    refObj  instanceof Number n ? n.doubleValue() : 0);
+                    revObj     instanceof Number n ? n.doubleValue() : 0,
+                    incObj     instanceof Number n ? n.doubleValue() : 0,
+                    expObj     instanceof Number n ? n.doubleValue() : 0,
+                    grnObj     instanceof Number n ? n.doubleValue() : 0,
+                    discObj    instanceof Number n ? n.doubleValue() : 0,
+                    refObj     instanceof Number n ? n.doubleValue() : 0,
+                    retProfObj instanceof Number n ? n.doubleValue() : 0,
+                    cogsObj    instanceof Number n ? n.doubleValue() : 0);
         } catch (Exception e) {
             System.err.println("ReportService.getFinanceSummary: " + e.getMessage());
-            return new FinanceSummary(0, 0, 0, 0, 0, 0);
+            return new FinanceSummary(0, 0, 0, 0, 0, 0, 0, 0);
         }
     }
 

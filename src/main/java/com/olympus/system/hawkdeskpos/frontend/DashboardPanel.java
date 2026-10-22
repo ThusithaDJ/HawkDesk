@@ -49,7 +49,7 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
     private final ReportService   reportService;
 
     // Summary tiles
-    private JLabel salesRevVal, discountVal, netRevVal, stockPurchVal, cashRefundVal, netProfitVal;
+    private JLabel salesRevVal, discountVal, netRevVal, stockPurchVal, cashRefundVal, expensesVal, netProfitVal;
     private JPanel summaryTilesRow;
 
     // Sidebar
@@ -181,18 +181,23 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
         main.add(summaryHeader);
         main.add(Box.createVerticalStrut(6));
 
-        // ── Summary tiles (2 rows × 3) ────────────────────────────────────────
-        summaryTilesRow = new JPanel(new GridLayout(2, 3, 10, 10));
+        // ── Summary tiles (2 rows × 4) ────────────────────────────────────────
+        // Row 1: Sales Revenue | Discounts Given | Stock Purchases | Cash Refunds
+        // Row 2: Expenses | (spacer) | Net Revenue | Net Profit
+        summaryTilesRow = new JPanel(new GridLayout(2, 4, 10, 10));
         summaryTilesRow.setOpaque(false);
         summaryTilesRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 170));
         summaryTilesRow.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        salesRevVal  = addStatTile(summaryTilesRow, "Sales Revenue",    "Rs. 0.00", "#185FA5");
-        discountVal  = addStatTile(summaryTilesRow, "Discounts Given",  "Rs. 0.00", "#E65100");
-        netRevVal    = addStatTile(summaryTilesRow, "Net Revenue",       "Rs. 0.00", "#2E7D32");
-        stockPurchVal= addStatTile(summaryTilesRow, "Stock Purchases",  "Rs. 0.00", "#C62828");
-        cashRefundVal= addStatTile(summaryTilesRow, "Cash Refunds",     "Rs. 0.00", "#B71C1C");
-        netProfitVal = addStatTile(summaryTilesRow, "Net Profit",        "Rs. 0.00", "#6A1B9A");
+        salesRevVal  = addStatTile(summaryTilesRow, "Sales Revenue",   "Rs. 0.00", "#185FA5", "Total revenue from all sales in the selected period");
+        discountVal  = addStatTile(summaryTilesRow, "Discounts Given", "Rs. 0.00", "#E65100", "Total discount amounts applied to sales");
+        stockPurchVal= addStatTile(summaryTilesRow, "Stock Purchases", "Rs. 0.00", "#C62828", "Total cost of goods received (GRN) in the period");
+        cashRefundVal= addStatTile(summaryTilesRow, "Cash Refunds",    "Rs. 0.00", "#B71C1C", "Total cash refunded for returned items");
+        expensesVal  = addStatTile(summaryTilesRow, "Expenses",        "Rs. 0.00", "#7B1FA2", "Total expenses recorded in the period");
+        JPanel tilesSpacer = new JPanel(); tilesSpacer.setOpaque(false);
+        summaryTilesRow.add(tilesSpacer);
+        netRevVal    = addStatTile(summaryTilesRow, "Net Revenue",     "Rs. 0.00", "#2E7D32", "Sales Revenue minus Discounts, Cash Refunds, Stock Purchases, and Expenses");
+        netProfitVal = addStatTile(summaryTilesRow, "Net Profit",      "Rs. 0.00", "#6A1B9A", "Gross sales profit (Revenue − COGS − returned-item cost) minus Stock Purchases and Expenses");
 
         main.add(summaryTilesRow);
         main.add(Box.createVerticalStrut(18));
@@ -316,18 +321,22 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
 
             @Override protected void done() {
                 if (stats == null || fin == null) return;
-                double salesRev  = fin.salesRevenue();
-                double discount  = fin.discountGiven();
-                double netRev    = salesRev - discount;
-                double stockPurch= fin.grnCost();
-                double refunds   = fin.refundsGiven();
-                double netProfit = netRev - stockPurch - fin.expenses() - refunds;
+                double salesRev   = fin.salesRevenue();
+                double discount   = fin.discountGiven();
+                double stockPurch = fin.grnCost();
+                double refunds    = fin.refundsGiven();
+                double expenses   = fin.expenses();
+                double netRev     = salesRev - discount - refunds - stockPurch - expenses;
+                // Sales profit mirrors SalesHistory: revenue − COGS − returned-item profit
+                double salesProfit = salesRev - fin.cogs() - fin.returnedItemProfit();
+                double netProfit   = salesProfit - stockPurch - expenses;
 
                 salesRevVal  .setText(String.format("Rs. %.2f", salesRev));
                 discountVal  .setText(String.format("Rs. %.2f", discount));
-                netRevVal    .setText(String.format("Rs. %.2f", netRev));
                 stockPurchVal.setText(String.format("Rs. %.2f", stockPurch));
                 cashRefundVal.setText(String.format("Rs. %.2f", refunds));
+                expensesVal  .setText(String.format("Rs. %.2f", expenses));
+                netRevVal    .setText(String.format("Rs. %.2f", netRev));
                 netProfitVal .setText(String.format("Rs. %.2f", netProfit));
                 netProfitVal .setForeground(netProfit >= 0
                         ? new Color(0x2E, 0x7D, 0x32) : new Color(0xC6, 0x28, 0x28));
@@ -470,15 +479,18 @@ public class DashboardPanel extends JPanel implements com.olympus.system.hawkdes
     // ── Stat tile builder ──────────────────────────────────────────────────────
 
     /** Adds a stat tile to parent and returns a direct reference to its value label. */
-    private JLabel addStatTile(JPanel parent, String label, String initial, String colorHex) {
+    private JLabel addStatTile(JPanel parent, String label, String initial, String colorHex, String tooltip) {
         CardPanel tile = new CardPanel(new BorderLayout(0, 4));
         tile.setBorder(new EmptyBorder(12, 14, 12, 14));
+        tile.setToolTipText(tooltip);
         JLabel lbl = new JLabel(label);
         lbl.setFont(lbl.getFont().deriveFont(11f));
         lbl.setForeground(TEXT2);
+        lbl.setToolTipText(tooltip);
         JLabel val = new JLabel(initial);
         val.setFont(val.getFont().deriveFont(Font.BOLD, 16f));
         val.setForeground(Color.decode(colorHex));
+        val.setToolTipText(tooltip);
         tile.add(lbl, BorderLayout.NORTH);
         tile.add(val, BorderLayout.CENTER);
         parent.add(tile);

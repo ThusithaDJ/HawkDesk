@@ -2,10 +2,13 @@ package com.olympus.system.hawkdeskpos.frontend.admin;
 
 import com.olympus.system.hawkdeskpos.db.dao.UomPreset;
 import com.olympus.system.hawkdeskpos.frontend.Home;
+import com.olympus.system.hawkdeskpos.plugin.PluginRegistry;
 import com.olympus.system.hawkdeskpos.frontend.components.CardPanel;
 import com.olympus.system.hawkdeskpos.frontend.components.FontManager;
 import com.olympus.system.hawkdeskpos.frontend.components.Refreshable;
 import com.olympus.system.hawkdeskpos.service.AuthService;
+import com.olympus.system.hawkdeskpos.service.BackupService;
+import com.olympus.system.hawkdeskpos.service.LicenseService;
 import com.olympus.system.hawkdeskpos.service.SettingsService;
 import com.olympus.system.hawkdeskpos.service.UomService;
 import com.olympus.system.hawkdeskpos.session.SessionContext;
@@ -58,6 +61,8 @@ public class SettingsPanel extends JPanel implements Refreshable {
     private final SessionFactory      sf;
     private final UomService          uomService;
     private final com.olympus.system.hawkdeskpos.service.CashAccountService cashAccountService;
+    private final BackupService       backupService;
+    private final LicenseService      licenseService;
 
     private JPanel contentArea;
     private JPanel navPanel;
@@ -70,7 +75,7 @@ public class SettingsPanel extends JPanel implements Refreshable {
     private static final String[] SECTIONS = {
             "Shop Details", "Sales & Billing", "Receipt & Printing",
             "Stock & Inventory", "Units of Measure", "Categories & Brands",
-            "Finance & Accounts", "UI Appearance", "Backup", "User Management", "About"
+            "Finance & Accounts", "UI Appearance", "Backup", "User Management", "Plugins", "Licensing", "About"
     };
 
     // Shop details fields
@@ -92,23 +97,31 @@ public class SettingsPanel extends JPanel implements Refreshable {
     private int selectedFontSize;
 
     public SettingsPanel(SettingsService settings, AuthService authService, SessionFactory sf) {
-        this(settings, authService, sf, null);
+        this(settings, authService, sf, null, null);
     }
 
     public SettingsPanel(SettingsService settings, AuthService authService, SessionFactory sf,
                          com.olympus.system.hawkdeskpos.service.CashAccountService cashAccountService) {
+        this(settings, authService, sf, cashAccountService, null);
+    }
+
+    public SettingsPanel(SettingsService settings, AuthService authService, SessionFactory sf,
+                         com.olympus.system.hawkdeskpos.service.CashAccountService cashAccountService,
+                         BackupService backupService) {
         this.settings            = settings;
         this.authService         = authService;
         this.sf                  = sf;
         this.uomService          = sf != null ? new UomService(sf) : null;
         this.cashAccountService  = cashAccountService;
+        this.backupService       = backupService;
+        this.licenseService      = new LicenseService(sf, settings);
         setBackground(BG);
         setLayout(new BorderLayout());
         buildUI();
     }
 
     public SettingsPanel(SettingsService settings) {
-        this(settings, null, null, null);
+        this(settings, null, null, null, null);
     }
 
     private void buildUI() {
@@ -215,9 +228,11 @@ public class SettingsPanel extends JPanel implements Refreshable {
             case "Finance & Accounts"-> buildFinanceSection();
             case "UI Appearance"     -> buildAppearanceSection();
             case "Categories & Brands" -> { Home.navigate(Home.CARD_CATS);   yield new JPanel(); }
-            case "Backup"              -> { Home.navigate(Home.CARD_BACKUP); yield new JPanel(); }
+            case "Backup"              -> buildBackupSection();
             case "User Management"     -> { Home.navigate(Home.CARD_USERS);  yield new JPanel(); }
             case "About"               -> buildAboutSection();
+            case "Plugins"             -> buildPluginsSection();
+            case "Licensing"           -> buildLicensingSection();
             case "Danger Zone"         -> buildDangerZoneSection();
             default                    -> buildShopDetailsSection();
         };
@@ -615,38 +630,249 @@ public class SettingsPanel extends JPanel implements Refreshable {
         p.add(info);
         p.add(Box.createVerticalStrut(12));
 
-        // ── Trial status card ─────────────────────────────────────────────────
-        CardPanel trial = sectionCard("LICENCE & TRIAL STATUS");
-        JPanel trialGrid = new JPanel(new GridLayout(5, 1, 0, 6));
-        trialGrid.setOpaque(false);
+        // ── Licence status card ───────────────────────────────────────────────
+        CardPanel licCard = sectionCard("LICENCE & TRIAL STATUS");
+        JPanel licGrid = new JPanel(new GridLayout(3, 1, 0, 6));
+        licGrid.setOpaque(false);
 
-        boolean expired   = settings.isTrialExpired();
-        long    elapsed   = settings.trialDaysElapsed();
-        long    remaining = settings.trialDaysRemaining();
-        int     total     = settings.trialTotalDays();
-        String  startDate = settings.trialStartDate().toString();
-
-        trialGrid.add(infoRow("Trial Start Date",  startDate));
-        trialGrid.add(infoRow("Trial Period",       total + " days"));
-        trialGrid.add(infoRow("Days Elapsed",       elapsed + " days"));
-        trialGrid.add(infoRow("Days Remaining",     remaining + " days"));
+        boolean licensed = licenseService.isLicensed();
 
         JPanel statusRow = new JPanel(new BorderLayout(8, 0));
         statusRow.setOpaque(false);
         JLabel statusLbl = new JLabel("Status");
         statusLbl.setFont(statusLbl.getFont().deriveFont(Font.BOLD, 12f));
         statusLbl.setForeground(TEXT2);
-        JLabel statusVal = new JLabel(expired ? "EXPIRED" : "ACTIVE");
-        statusVal.setFont(statusVal.getFont().deriveFont(Font.BOLD, 12f));
-        statusVal.setForeground(expired ? new Color(0xC6, 0x28, 0x28) : new Color(0x2E, 0x7D, 0x32));
-        statusRow.add(statusLbl, BorderLayout.WEST);
-        statusRow.add(statusVal, BorderLayout.CENTER);
-        trialGrid.add(statusRow);
+        JLabel statusVal;
 
-        ((JPanel)trial).add(trialGrid, BorderLayout.CENTER);
-        p.add(trial);
+        if (licensed) {
+            statusVal = new JLabel("LICENSED");
+            statusVal.setFont(statusVal.getFont().deriveFont(Font.BOLD, 12f));
+            statusVal.setForeground(new Color(0x2E, 0x7D, 0x32));
+            statusRow.add(statusLbl, BorderLayout.WEST);
+            statusRow.add(statusVal, BorderLayout.CENTER);
+
+            licGrid.add(statusRow);
+            licGrid.add(infoRow("Licence Key", settings.licenseKey()));
+            licGrid.add(infoRow("Machine ID",  LicenseService.getMachineId()));
+        } else {
+            boolean expired   = settings.isTrialExpired();
+            long    remaining = settings.trialDaysRemaining();
+            int     total     = settings.trialTotalDays();
+
+            statusVal = new JLabel(expired ? "EXPIRED" : "TRIAL ACTIVE");
+            statusVal.setFont(statusVal.getFont().deriveFont(Font.BOLD, 12f));
+            statusVal.setForeground(expired
+                    ? new Color(0xC6, 0x28, 0x28)
+                    : new Color(0xE6, 0x5A, 0x00));
+            statusRow.add(statusLbl, BorderLayout.WEST);
+            statusRow.add(statusVal, BorderLayout.CENTER);
+
+            licGrid.add(statusRow);
+            licGrid.add(infoRow("Trial Period",   total + " days"));
+            licGrid.add(infoRow("Days Remaining", remaining + " days"));
+        }
+
+        ((JPanel)licCard).add(licGrid, BorderLayout.CENTER);
+        p.add(licCard);
 
         return p;
+    }
+
+    private JPanel buildPluginsSection() {
+        JPanel wrap = new JPanel(new BorderLayout());
+        wrap.setOpaque(false);
+        wrap.add(new PluginsPanel(), BorderLayout.CENTER);
+        return wrap;
+    }
+
+    private JPanel buildLicensingSection() {
+        JPanel p = new JPanel();
+        p.setOpaque(false);
+        p.setLayout(new BoxLayout(p, BoxLayout.Y_AXIS));
+
+        boolean licensed = licenseService.isLicensed();
+
+        // ── Status card ───────────────────────────────────────────────────────
+        CardPanel statusCard = sectionCard("LICENCE STATUS");
+        JPanel statusGrid;
+
+        if (licensed) {
+            statusGrid = new JPanel(new GridLayout(4, 1, 0, 6));
+            statusGrid.setOpaque(false);
+
+            JPanel statusRow = new JPanel(new BorderLayout(8, 0));
+            statusRow.setOpaque(false);
+            JLabel statusLbl = new JLabel("Status");
+            statusLbl.setFont(statusLbl.getFont().deriveFont(Font.BOLD, 12f));
+            statusLbl.setForeground(TEXT2);
+            JLabel statusVal = new JLabel("LICENSED");
+            statusVal.setFont(statusVal.getFont().deriveFont(Font.BOLD, 12f));
+            statusVal.setForeground(new Color(0x2E, 0x7D, 0x32));
+            statusRow.add(statusLbl, BorderLayout.WEST);
+            statusRow.add(statusVal, BorderLayout.CENTER);
+
+            statusGrid.add(statusRow);
+            statusGrid.add(infoRow("Licence Key",  settings.licenseKey()));
+            statusGrid.add(infoRow("Server URL",   settings.licenseServerUrl()));
+            statusGrid.add(infoRow("Machine ID",   LicenseService.getMachineId()));
+        } else {
+            boolean expired   = settings.isTrialExpired();
+            long    remaining = settings.trialDaysRemaining();
+            int     total     = settings.trialTotalDays();
+
+            statusGrid = new JPanel(new GridLayout(4, 1, 0, 6));
+            statusGrid.setOpaque(false);
+
+            JPanel statusRow = new JPanel(new BorderLayout(8, 0));
+            statusRow.setOpaque(false);
+            JLabel statusLbl = new JLabel("Status");
+            statusLbl.setFont(statusLbl.getFont().deriveFont(Font.BOLD, 12f));
+            statusLbl.setForeground(TEXT2);
+            JLabel statusVal = new JLabel(expired
+                    ? "TRIAL EXPIRED"
+                    : "TRIAL — " + remaining + " of " + total + " day(s) remaining");
+            statusVal.setFont(statusVal.getFont().deriveFont(Font.BOLD, 12f));
+            statusVal.setForeground(expired
+                    ? new Color(0xC6, 0x28, 0x28)
+                    : new Color(0xE6, 0x5A, 0x00));
+            statusRow.add(statusLbl, BorderLayout.WEST);
+            statusRow.add(statusVal, BorderLayout.CENTER);
+
+            statusGrid.add(statusRow);
+            statusGrid.add(infoRow("Trial Start",    settings.trialStartDate().toString()));
+            statusGrid.add(infoRow("Trial Period",   total + " days"));
+            statusGrid.add(infoRow("Days Remaining", remaining + " days"));
+        }
+
+        ((JPanel) statusCard).add(statusGrid, BorderLayout.CENTER);
+        p.add(statusCard);
+        p.add(Box.createVerticalStrut(12));
+
+        if (!licensed) {
+            // ── Activation card ───────────────────────────────────────────────
+            CardPanel activateCard = sectionCard("ACTIVATE LICENCE");
+            JPanel grid = new JPanel(new GridLayout(2, 1, 0, 10));
+            grid.setOpaque(false);
+
+            JTextField serverUrlField = tf(settings.licenseServerUrl());
+            JTextField keyField = tf("");
+
+            JButton testBtn = new JButton("Test Connection");
+            testBtn.setPreferredSize(new Dimension(150, 28));
+
+            JPanel urlRow = new JPanel(new BorderLayout(8, 0));
+            urlRow.setOpaque(false);
+            urlRow.add(serverUrlField, BorderLayout.CENTER);
+            urlRow.add(testBtn, BorderLayout.EAST);
+
+            grid.add(labeled("Licence Server URL", urlRow));
+            grid.add(labeled("Licence Key", keyField));
+
+            ((JPanel) activateCard).add(grid, BorderLayout.CENTER);
+            p.add(activateCard);
+            p.add(Box.createVerticalStrut(10));
+
+            JLabel msgLabel = new JLabel(" ");
+            msgLabel.setFont(msgLabel.getFont().deriveFont(12f));
+            msgLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            msgLabel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 20));
+            p.add(msgLabel);
+            p.add(Box.createVerticalStrut(6));
+
+            JButton activateBtn = new JButton("Activate Licence");
+            activateBtn.setBackground(NAVY);
+            activateBtn.setForeground(Color.WHITE);
+            activateBtn.setOpaque(true);
+            activateBtn.setBorderPainted(false);
+
+            JPanel btnRow = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
+            btnRow.setOpaque(false);
+            btnRow.setAlignmentX(Component.LEFT_ALIGNMENT);
+            btnRow.setMaximumSize(new Dimension(Integer.MAX_VALUE, 40));
+            btnRow.add(activateBtn);
+            p.add(btnRow);
+
+            testBtn.addActionListener(e -> {
+                String url = serverUrlField.getText().trim();
+                if (url.isBlank()) {
+                    msgLabel.setText("Please enter a server URL first.");
+                    msgLabel.setForeground(new Color(0xC6, 0x28, 0x28));
+                    return;
+                }
+                testBtn.setEnabled(false);
+                msgLabel.setText("Testing connection...");
+                msgLabel.setForeground(TEXT2);
+                SwingWorker<Boolean, Void> w = new SwingWorker<>() {
+                    @Override protected Boolean doInBackground() {
+                        return licenseService.testConnection(url);
+                    }
+                    @Override protected void done() {
+                        testBtn.setEnabled(true);
+                        try {
+                            if (get()) {
+                                msgLabel.setText("Connection successful.");
+                                msgLabel.setForeground(new Color(0x2E, 0x7D, 0x32));
+                            } else {
+                                msgLabel.setText("Cannot reach server — check the URL.");
+                                msgLabel.setForeground(new Color(0xC6, 0x28, 0x28));
+                            }
+                        } catch (Exception ex) {
+                            msgLabel.setText("Connection error: " + ex.getMessage());
+                            msgLabel.setForeground(new Color(0xC6, 0x28, 0x28));
+                        }
+                    }
+                };
+                w.execute();
+            });
+
+            activateBtn.addActionListener(e -> {
+                String url = serverUrlField.getText().trim();
+                String key = keyField.getText().trim();
+                if (url.isBlank() || key.isBlank()) {
+                    msgLabel.setText("Both server URL and licence key are required.");
+                    msgLabel.setForeground(new Color(0xC6, 0x28, 0x28));
+                    return;
+                }
+                activateBtn.setEnabled(false);
+                msgLabel.setText("Activating...");
+                msgLabel.setForeground(TEXT2);
+                String shopName = settings.shopName();
+                SwingWorker<String, Void> w = new SwingWorker<>() {
+                    @Override protected String doInBackground() throws Exception {
+                        return licenseService.activate(url, key, shopName);
+                    }
+                    @Override protected void done() {
+                        activateBtn.setEnabled(true);
+                        try {
+                            String result = get();
+                            msgLabel.setText(result);
+                            msgLabel.setForeground(new Color(0x2E, 0x7D, 0x32));
+                            showSection("Licensing");
+                        } catch (Exception ex) {
+                            Throwable cause = ex.getCause() != null ? ex.getCause() : ex;
+                            msgLabel.setText(cause.getMessage());
+                            msgLabel.setForeground(new Color(0xC6, 0x28, 0x28));
+                        }
+                    }
+                };
+                w.execute();
+            });
+        }
+
+        return p;
+    }
+
+    private JPanel buildBackupSection() {
+        JPanel wrap = new JPanel(new BorderLayout());
+        wrap.setOpaque(false);
+        if (backupService != null) {
+            wrap.add(new BackupPanel(backupService, true), BorderLayout.CENTER);
+        } else {
+            JLabel msg = new JLabel("Backup service not available.");
+            msg.setForeground(new Color(0x5A, 0x60, 0x70));
+            wrap.add(msg, BorderLayout.CENTER);
+        }
+        return wrap;
     }
 
     private JPanel infoRow(String label, String value) {
@@ -796,7 +1022,7 @@ public class SettingsPanel extends JPanel implements Refreshable {
             { "Stock & GRN Records",               "Clears stock, grn, grninfo, item_batch, stock_adjustment tables" },
             { "Customer Records",                  "Clears the customer table" },
             { "Audit Log",                         "Clears the audit_log table" },
-            { "Incomes, Expenses & Cash Accounts", "Clears income, expense, cash_transaction and cash_account tables" },
+            { "Incomes, Expenses & Cash Accounts", "Clears all transactions; deletes non-default accounts; resets Cash Drawer balance to Rs. 0" },
             { "Items (Permanent Delete)",          "PERMANENTLY removes all items, variants and categories/brands links — clear Stock & GRN first" }
         };
 
@@ -911,7 +1137,13 @@ public class SettingsPanel extends JPanel implements Refreshable {
                         session.createNativeQuery("DELETE FROM cash_transaction", Void.class).executeUpdate();
                         session.createNativeQuery("DELETE FROM income", Void.class).executeUpdate();
                         session.createNativeQuery("DELETE FROM expense", Void.class).executeUpdate();
-                        session.createNativeQuery("DELETE FROM cash_account", Void.class).executeUpdate();
+                        // Delete all accounts except the Cash Drawer; just reset its balance
+                        session.createNativeQuery(
+                            "DELETE FROM cash_account WHERE account_type != 'CASH_DRAWER'",
+                            Void.class).executeUpdate();
+                        session.createNativeQuery(
+                            "UPDATE cash_account SET balance = 0 WHERE account_type = 'CASH_DRAWER'",
+                            Void.class).executeUpdate();
                         deleted.add("Incomes, Expenses & Cash Accounts");
                     }
                     case 6 -> { // Items permanent delete

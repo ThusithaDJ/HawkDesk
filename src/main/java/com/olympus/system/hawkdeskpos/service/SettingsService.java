@@ -108,4 +108,16 @@ public class SettingsService {
     public boolean isTrialExpired() {
         return trialDaysElapsed() >= TRIAL_DAYS;
     }
+
+    // ── Licensing ──────────────────────────────────────────────────────────────
+
+    public String licenseServerUrl()   { return get("LicenseServerUrl", ""); }
+    public String licenseKey()         { return get("LicenseKey", ""); }
+    public String licensedMachineId()  { return get("LicensedMachineId", ""); }
+
+    public void setLicenseServerUrl(String url)              { set("LicenseServerUrl", url); }
+    public void saveLicense(String key, String machineId) {
+        set("LicenseKey",        key);
+        set("LicensedMachineId", machineId);
+    }
 }

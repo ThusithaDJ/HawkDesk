@@ -15,15 +15,22 @@ public class Controller {
 
     static {
         try {
-            // Read connection settings from hibernate.cfg.xml
             Configuration config = new Configuration().configure();
+
+            // Override connection settings from config.cnf if the user has
+            // configured a database through the setup dialog.
+            com.olympus.system.hawkdeskpos.util.DbConfig dbCfg =
+                    new com.olympus.system.hawkdeskpos.util.DbConfig();
+            if (dbCfg.isConfigured()) {
+                config.setProperty("hibernate.connection.url",      dbCfg.buildJdbcUrl());
+                config.setProperty("hibernate.connection.username", dbCfg.getUser());
+                config.setProperty("hibernate.connection.password", dbCfg.getPassword());
+            }
+
             String url  = config.getProperty("hibernate.connection.url");
             String user = config.getProperty("hibernate.connection.username");
             String pass = config.getProperty("hibernate.connection.password");
 
-            // Apply any pending migrations BEFORE Hibernate validates the schema.
-            // baselineOnMigrate: if no flyway_schema_history table exists yet (pre-existing DB),
-            // create it and mark V1–V6 as already applied, then run V7+ normally.
             Flyway.configure()
                     .dataSource(url, user, pass)
                     .locations("classpath:db/migration")
@@ -32,7 +39,6 @@ public class Controller {
                     .load()
                     .migrate();
 
-            // Now build the SessionFactory — schema is guaranteed up-to-date
             sessionFactory = config.buildSessionFactory();
         } catch (Throwable ex) {
             System.err.println("SessionFactory creation failed: " + ex);
@@ -44,7 +50,6 @@ public class Controller {
         return sessionFactory;
     }
 
-    // Always close the factory on app shutdown
     public static void shutdown() {
         getSessionFactory().close();
     }

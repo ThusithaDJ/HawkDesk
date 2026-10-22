@@ -4,6 +4,7 @@ import com.olympus.system.hawkdeskpos.db.dao.AuditLog;
 import com.olympus.system.hawkdeskpos.dto.EmployeeDto;
 import com.olympus.system.hawkdeskpos.service.AuditService;
 import com.olympus.system.hawkdeskpos.service.AuthService;
+import com.olympus.system.hawkdeskpos.service.LicenseService;
 import com.olympus.system.hawkdeskpos.service.SettingsService;
 import com.olympus.system.hawkdeskpos.session.SessionContext;
 
@@ -175,8 +176,13 @@ public class LoginPanel extends JPanel {
         leftBtns.add(exitBtn);
         bottom.add(leftBtns, BorderLayout.WEST);
 
-        // Trial status (centre of bottom bar)
-        if (settingsService != null) {
+        // Trial status (centre of bottom bar) — hidden when a valid licence is active
+        String licKey       = settingsService != null ? settingsService.licenseKey()        : "";
+        String licMachineId = settingsService != null ? settingsService.licensedMachineId() : "";
+        boolean licensed = !licKey.isBlank() && !licMachineId.isBlank()
+                && licMachineId.equalsIgnoreCase(LicenseService.getMachineId());
+
+        if (settingsService != null && !licensed) {
             long remaining = settingsService.trialDaysRemaining();
             String trialText;
             Color  trialColor;

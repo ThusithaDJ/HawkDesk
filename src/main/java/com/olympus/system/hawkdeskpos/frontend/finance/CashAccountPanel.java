@@ -383,15 +383,17 @@ public class CashAccountPanel extends JPanel
                     record TxRow(Date date, String type, String desc, String ref, double amount) {}
                     List<TxRow> rows = new ArrayList<>();
                     for (Income i : incomes) {
-                        rows.add(new TxRow(i.getTransactionDate(), "INCOME",
-                                i.getDescription() != null ? i.getDescription() : "",
-                                i.getReference()   != null ? i.getReference()   : "",
+                        String desc = i.getDescription() != null ? i.getDescription() : "";
+                        String type = desc.startsWith("Transfer from ") ? "TRANSFER" : "INCOME";
+                        rows.add(new TxRow(i.getTransactionDate(), type, desc,
+                                i.getReference() != null ? i.getReference() : "",
                                 i.getAmount()));
                     }
                     for (Expense e : expenses) {
-                        rows.add(new TxRow(e.getTransactionDate(), "EXPENSE",
-                                e.getDescription() != null ? e.getDescription() : "",
-                                e.getReference()   != null ? e.getReference()   : "",
+                        String desc = e.getDescription() != null ? e.getDescription() : "";
+                        String type = desc.startsWith("Transfer to ") ? "TRANSFER" : "EXPENSE";
+                        rows.add(new TxRow(e.getTransactionDate(), type, desc,
+                                e.getReference() != null ? e.getReference() : "",
                                 e.getAmount()));
                     }
                     rows.sort((a, b) -> b.date().compareTo(a.date()));
@@ -424,7 +426,9 @@ public class CashAccountPanel extends JPanel
                         lbl.setFont(lbl.getFont().deriveFont(Font.BOLD, 11f));
                         lbl.setOpaque(true);
                         lbl.setBackground(isSel ? table.getSelectionBackground() : table.getBackground());
-                        lbl.setForeground("INCOME".equals(value) ? GREEN : RED);
+                        lbl.setForeground("INCOME".equals(value) ? GREEN
+                                        : "TRANSFER".equals(value) ? new Color(0x7B, 0x61, 0xFF)
+                                        : RED);
                         return lbl;
                     });
                     tbl.getColumnModel().getColumn(0).setPreferredWidth(140);

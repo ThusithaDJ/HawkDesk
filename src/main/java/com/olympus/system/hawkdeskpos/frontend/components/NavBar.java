@@ -28,6 +28,7 @@ public class NavBar extends JPanel {
     private JLabel shopLabel;
     private final List<NavButton> navButtons = new ArrayList<>();
     private Runnable logoutCallback;
+    private JPanel navCentre;
 
     public record NavItem(String label, String card, Permission requiredPermission) {}
 
@@ -52,7 +53,8 @@ public class NavBar extends JPanel {
         add(left, BorderLayout.WEST);
 
         // ── Centre: nav buttons ───────────────────────────────────────────────
-        JPanel centre = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0));
+        navCentre = new JPanel(new FlowLayout(FlowLayout.CENTER, 4, 0));
+        JPanel centre = navCentre;
         centre.setOpaque(false);
 
         List<NavItem> items = List.of(
@@ -156,6 +158,15 @@ public class NavBar extends JPanel {
         // Live clock — updates every 30 seconds
         updateClock();
         new Timer(30_000, e -> updateClock()).start();
+    }
+
+    /** Called by the plugin system to inject plugin nav buttons after construction. */
+    public void addNavButton(String label, String cardName) {
+        NavButton btn = new NavButton(label, cardName);
+        navButtons.add(btn);
+        navCentre.add(btn);
+        navCentre.revalidate();
+        navCentre.repaint();
     }
 
     private void updateClock() {
