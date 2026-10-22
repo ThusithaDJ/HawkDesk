@@ -298,8 +298,8 @@ public class CashAccountService {
             String descIn  = "Transfer from " + from.getName() + ": " + desc;
             session.persist(new Expense(from, amount, descOut, null, new Date(), emp));
             session.persist(new Income(to,   amount, descIn,  null, new Date(), emp));
-            persistTx(session, CashTransaction.TxType.EXPENSE, null, descOut, amount, new Date(), from, emp, "Transfer");
-            persistTx(session, CashTransaction.TxType.INCOME,  null, descIn,  amount, new Date(), to,   emp, "Transfer");
+            persistTx(session, CashTransaction.TxType.TRANSFER, null, descOut, amount, new Date(), from, emp, "Transfer");
+            persistTx(session, CashTransaction.TxType.TRANSFER, null, descIn,  amount, new Date(), to,   emp, "Transfer");
             tx.commit();
         } catch (Exception e) {
             System.err.println("CashAccountService.transferFunds: " + e.getMessage());

@@ -1,0 +1,4 @@
+-- V32: Add TRANSFER to cash_transaction type enum
+
+ALTER TABLE cash_transaction
+  MODIFY COLUMN type ENUM('SALE','GRN','RETURN_REFUND','INCOME','EXPENSE','CREDIT_PAYMENT','TRANSFER') NOT NULL;

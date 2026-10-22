@@ -8,7 +8,7 @@ import java.util.Date;
 @Table(name = "cash_transaction")
 public class CashTransaction implements Serializable {
 
-    public enum TxType { SALE, GRN, RETURN_REFUND, INCOME, EXPENSE, CREDIT_PAYMENT }
+    public enum TxType { SALE, GRN, RETURN_REFUND, INCOME, EXPENSE, CREDIT_PAYMENT, TRANSFER }
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

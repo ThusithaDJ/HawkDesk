@@ -383,6 +383,7 @@ public class CashflowPanel extends JPanel
                 case "INCOME"         -> TEAL;
                 case "EXPENSE"        -> AMBER;
                 case "CREDIT_PAYMENT" -> new Color(0x00, 0x6E, 0xC9);
+                case "TRANSFER"       -> new Color(0x7B, 0x61, 0xFF);
                 default               -> TEXT2;
             };
             lbl.setForeground(fg);

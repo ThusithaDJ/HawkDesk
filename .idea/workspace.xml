@@ -5,25 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="ded8fcb4-700e-49c8-88b8-cda4014df2fe" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.claude/settings.local.json" beforeDir="false" afterPath="$PROJECT_DIR$/.claude/settings.local.json" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.serena/project.yml" beforeDir="false" afterPath="$PROJECT_DIR$/.serena/project.yml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/util/Controller.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/util/Controller.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/DashboardPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/DashboardPanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Home.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/Home.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/LoginPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/LoginPanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/SplashScreen.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/SplashScreen.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/admin/BackupPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/admin/BackupPanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/admin/SettingsPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/admin/SettingsPanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/components/NavBar.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/components/NavBar.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/CashTransaction.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/db/dao/CashTransaction.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/finance/CashAccountPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/finance/CashAccountPanel.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/finance/CashflowPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/finance/CashflowPanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/SalesHistoryPanel.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/frontend/sale/SalesHistoryPanel.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/BackupService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/BackupService.java" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/CashAccountService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/CashAccountService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReportService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReportService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReturnService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/ReturnService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/SettingsService.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/olympus/system/hawkdeskpos/service/SettingsService.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/resources/hibernate.cfg.xml" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/resources/hibernate.cfg.xml" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -60,6 +47,7 @@
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
   <component name="HighlightingSettingsPerFile">
+    <setting file="jar://C:/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot/lib/src.zip!/java.base/java/util/List.java" root0="SKIP_INSPECTION" />
     <setting file="jar://C:/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot/lib/src.zip!/java.desktop/javax/swing/Box.java" root0="SKIP_INSPECTION" />
     <setting file="jar://C:/Program Files/Eclipse Adoptium/jdk-21.0.1.12-hotspot/lib/src.zip!/java.desktop/javax/swing/JLabel.java" root0="SKIP_INSPECTION" />
   </component>
@@ -105,7 +93,7 @@
     &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
     &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
     &quot;copilot.chat.legacySessionMetadata.migrated&quot;: &quot;true&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;claude/confident-blackburn&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;b73b63c3&quot;,
     &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.eslint&quot;: &quot;true&quot;,
     &quot;node.js.detected.package.tslint&quot;: &quot;true&quot;,
@@ -161,6 +149,17 @@
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
   </component>
   <component name="XDebuggerManager">
     <breakpoint-manager>
